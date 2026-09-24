@@ -46,6 +46,20 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 	return userModel.ToDomain(), nil
 }
 
+func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*entity.User, error) {
+	var userModel model.UserModel
+
+	err := r.db.WithContext(ctx).Where("username = ?", username).First(&userModel).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domainerr.ErrUserNotFound
+		}
+		return nil, err
+	}
+
+	return userModel.ToDomain(), nil
+}
+
 func (r *UserRepository) FindAll(ctx context.Context, limit, offset int) ([]*entity.User, error) {
 	var usersModel []model.UserModel
 

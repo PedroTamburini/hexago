@@ -13,7 +13,7 @@ type UserUseCase struct {
 	hasher port.PasswordHasherService
 }
 
-func NewUserUseCase(repo port.UserRepository, hasher port.PasswordHasherService) *UserUseCase {
+func NewUserUseCase(repo port.UserRepository, hasher port.PasswordHasherService) port.UserUseCase {
 	return &UserUseCase{
 		repo:   repo,
 		hasher: hasher,
@@ -60,6 +60,25 @@ func (uc *UserUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput
 		IsActive:  user.IsActive,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
+	}, nil
+}
+
+func (uc *UserUseCase) FindByUsername(ctx context.Context, input dto.FindUserByUsernameInput) (*dto.FindUserByUsernameOutput, error) {
+	user, err := uc.repo.FindByUsername(ctx, input.Username)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.FindUserByUsernameOutput{
+		ID:           user.ID,
+		Name:         user.Name,
+		Username:     user.Username,
+		Email:        user.Email,
+		PasswordHash: user.PasswordHash,
+		IsAdmin:      user.IsAdmin,
+		IsActive:     user.IsActive,
+		CreatedAt:    user.CreatedAt,
+		UpdatedAt:    user.UpdatedAt,
 	}, nil
 }
 
