@@ -31,6 +31,22 @@ type FindUserByIDOutput struct {
 	UpdatedAt time.Time
 }
 
+type FindUserByUsernameInput struct {
+	Username string
+}
+
+type FindUserByUsernameOutput struct {
+	ID           uint64
+	Name         string
+	Username     string
+	Email        string
+	PasswordHash string
+	IsAdmin      bool
+	IsActive     bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
 type FindAllUsersInput struct {
 	Limit  int
 	Offset int

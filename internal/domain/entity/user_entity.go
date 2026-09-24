@@ -50,6 +50,7 @@ func NewUser(name, username, email string) (*User, error) {
 		Name:     name,
 		Username: username,
 		Email:    email,
+		IsActive: true,
 	}, nil
 }
 

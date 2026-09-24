@@ -13,7 +13,7 @@ type UserModel struct {
 	Email        string `gorm:"uniqueIndex;not null;size:254"`
 	PasswordHash string `gorm:"not null;"`
 	IsAdmin      bool   `gorm:"default:false"`
-	IsActive     bool   `gorm:"default:false"`
+	IsActive     bool   `gorm:"default:true"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
