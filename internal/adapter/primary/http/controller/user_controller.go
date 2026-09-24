@@ -3,8 +3,6 @@ package controller
 import (
 	"context"
 
-	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
-	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
 	"github.com/PedroTamburini/hexago/internal/domain/dto"
 	"github.com/PedroTamburini/hexago/internal/domain/port"
 )
@@ -17,20 +15,13 @@ func NewUserController(usecase port.UserUseCase) *UserController {
 	return &UserController{usecase: usecase}
 }
 
-func (c *UserController) Create(ctx context.Context, body request.CreateUserBodyRequest) (*response.CreateUserResponse, error) {
-	input := dto.CreateUserInput{
-		Name:     body.Name,
-		Username: body.Username,
-		Email:    body.Email,
-		Password: body.Password,
-	}
-
+func (c *UserController) Create(ctx context.Context, input dto.CreateUserInput) (*dto.CreateUserOutput, error) {
 	output, err := c.usecase.Create(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	return &response.CreateUserResponse{
+	return &dto.CreateUserOutput{
 		ID:       output.ID,
 		Name:     output.Name,
 		Username: output.Username,
@@ -38,15 +29,13 @@ func (c *UserController) Create(ctx context.Context, body request.CreateUserBody
 	}, nil
 }
 
-func (c *UserController) FindByID(ctx context.Context, uri request.FindUserByIDUriRequest) (*response.FindUserByIDResponse, error) {
-	input := dto.FindUserByIDInput{ID: uri.ID}
-
+func (c *UserController) FindByID(ctx context.Context, input dto.FindUserByIDInput) (*dto.FindUserByIDOutput, error) {
 	output, err := c.usecase.FindByID(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	return &response.FindUserByIDResponse{
+	return &dto.FindUserByIDOutput{
 		ID:        output.ID,
 		Name:      output.Name,
 		Username:  output.Username,
@@ -58,20 +47,15 @@ func (c *UserController) FindByID(ctx context.Context, uri request.FindUserByIDU
 	}, nil
 }
 
-func (c *UserController) FindAll(ctx context.Context, query request.FindAllUsersQuery) (*response.FindAllUsersResponse, error) {
-	input := dto.FindAllUsersInput{
-		Limit:  query.Limit,
-		Offset: query.Offset,
-	}
-
+func (c *UserController) FindAll(ctx context.Context, input dto.FindAllUsersInput) (*dto.FindAllUsersOutput, error) {
 	output, err := c.usecase.FindAll(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	users := make([]*response.UserResponse, len(output.Users))
+	users := make([]*dto.UserOutput, len(output.Users))
 	for i, user := range output.Users {
-		users[i] = &response.UserResponse{
+		users[i] = &dto.UserOutput{
 			ID:        user.ID,
 			Name:      user.Name,
 			Username:  user.Username,
@@ -83,25 +67,18 @@ func (c *UserController) FindAll(ctx context.Context, query request.FindAllUsers
 		}
 	}
 
-	return &response.FindAllUsersResponse{
+	return &dto.FindAllUsersOutput{
 		Users: users,
 	}, nil
 }
 
-func (c *UserController) Update(ctx context.Context, uri request.UpdateUserUriRequest, body request.UpdateUserBodyRequest) (*response.UpdateUserResponse, error) {
-	input := dto.UpdateUserInput{
-		ID:       uri.ID,
-		Name:     body.Name,
-		Username: body.Username,
-		Email:    body.Email,
-	}
-
+func (c *UserController) Update(ctx context.Context, input dto.UpdateUserInput) (*dto.UpdateUserOutput, error) {
 	output, err := c.usecase.Update(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	return &response.UpdateUserResponse{
+	return &dto.UpdateUserOutput{
 		ID:        output.ID,
 		Name:      output.Name,
 		Username:  output.Username,
@@ -110,9 +87,7 @@ func (c *UserController) Update(ctx context.Context, uri request.UpdateUserUriRe
 	}, nil
 }
 
-func (c *UserController) Delete(ctx context.Context, uri request.DeleteUserUriRequest) error {
-	input := dto.DeleteUserInput{ID: uri.ID}
-
+func (c *UserController) Delete(ctx context.Context, input dto.DeleteUserInput) error {
 	err := c.usecase.Delete(ctx, input)
 	if err != nil {
 		return err

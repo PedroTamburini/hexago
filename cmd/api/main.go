@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/controller"
@@ -16,7 +17,12 @@ import (
 )
 
 func main() {
-	config := config.LoadConfig()
+	config, err := config.LoadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
+		os.Exit(1)
+	}
+
 	logger := logger.NewLogger(config)
 
 	database, err := gorm.NewPostgresConnection(config, logger)
@@ -46,19 +52,24 @@ func setupHandlers(db *gorm.Database, cfg *config.Config) *router.Handlers {
 	userRepository := repository.NewUserRepository(db.DB)
 
 	// Services
+	jwtService := security.NewJWTService(cfg)
 	hasherService := security.NewPasswordHasherService(cfg.HasherCost)
 
 	// Use cases
 	userUseCase := usecase.NewUserUseCase(userRepository, hasherService)
+	authUseCase := usecase.NewAuthUseCase(userUseCase, hasherService, jwtService)
 
 	// Controllers
 	userController := controller.NewUserController(userUseCase)
+	authController := controller.NewAuthController(authUseCase)
 
 	// Handlers
-	userHandler := handler.NewUserHandler(userController)
+	userHandler := handler.NewUserHandler(userController, jwtService)
+	authHandler := handler.NewAuthHandler(authController)
 
 	handlers := &router.Handlers{
 		User: userHandler,
+		Auth: authHandler,
 	}
 
 	return handlers

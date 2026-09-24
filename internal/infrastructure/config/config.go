@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -9,13 +11,20 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type Environment string
+
+const (
+	EnvironmentDevelopment Environment = "development"
+	EnvironmentProduction  Environment = "production"
+)
+
 type Config struct {
 	ServerPort            string
 	ServerShutdownTimeout time.Duration
 	ServerReadTimeOut     time.Duration
 	ServerWriteTimeOut    time.Duration
 	ServerIdleTimeOut     time.Duration
-	Environment           string
+	Environment           Environment
 	DBHost                string
 	DBPort                string
 	DBUser                string
@@ -28,48 +37,80 @@ type Config struct {
 	DBConnMaxLifeTime     time.Duration
 	DBAutoMigration       bool
 	HasherCost            int
+	JWTSecret             string
+	JWTExpiration         time.Duration
 }
 
-func LoadConfig() *Config {
+func (c *Config) IsProduction() bool {
+	return c.Environment == EnvironmentProduction
+}
+
+func LoadConfig() (*Config, error) {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
-		log.Printf("Warning: .env file not found or error loading it: %v", err)
+		return nil, fmt.Errorf("loading .env: %w", err)
 	}
 
-	serverShutdownTimeout, _ := time.ParseDuration(getEnv("SERVER_SHUTDOWN_TIMEOUT", "5s"))
-	serverReadTimeOut, _ := time.ParseDuration(getEnv("SERVER_READ_TIMEOUT", "10s"))
-	serverWriteTimeOut, _ := time.ParseDuration(getEnv("SERVER_WRITE_TIMEOUT", "10s"))
-	serverIdleTimeOut, _ := time.ParseDuration(getEnv("SERVER_IDLE_TIMEOUT", "60s"))
-	dbMaxOpenConns, _ := strconv.Atoi(getEnv("DB_MAX_OPEN_CONNS", "25"))
-	dbMaxIdleConns, _ := strconv.Atoi(getEnv("DB_MAX_IDLE_CONNS", "25"))
-	dbConnMaxLifeTime, _ := time.ParseDuration(getEnv("DB_CONN_MAX_LIFETIME", "5m"))
-	dbAutoMigration, _ := strconv.ParseBool(getEnv("DB_AUTO_MIGRATION", "false"))
-	hasherCost, _ := strconv.Atoi(getEnv("HASHER_COST", "12"))
+	if len(env("JWT_SECRET", "")) < 32 || env("DB_PASSWORD", "") == "" {
+		return nil, errors.New("JWT_SECRET (min 32 chars) and DB_PASSWORD are required")
+	}
 
 	return &Config{
-		ServerPort:            getEnv("SERVER_PORT", "8080"),
-		ServerShutdownTimeout: serverShutdownTimeout,
-		ServerReadTimeOut:     serverReadTimeOut,
-		ServerWriteTimeOut:    serverWriteTimeOut,
-		ServerIdleTimeOut:     serverIdleTimeOut,
-		Environment:           getEnv("ENVIRONMENT", "development"),
-		DBHost:                getEnv("DB_HOST", "localhost"),
-		DBPort:                getEnv("DB_PORT", "5432"),
-		DBUser:                getEnv("DB_USER", "postgres"),
-		DBName:                getEnv("DB_NAME", "hexago"),
-		DBPassword:            getEnv("DB_PASSWORD", "postgres"),
-		DBSSLMode:             getEnv("DB_SSLMODE", "disable"),
-		DBTimeZone:            getEnv("DB_TIMEZONE", "America/Rio_Branco"),
-		DBMaxOpenConns:        dbMaxOpenConns,
-		DBMaxIdleConns:        dbMaxIdleConns,
-		DBConnMaxLifeTime:     dbConnMaxLifeTime,
-		DBAutoMigration:       dbAutoMigration,
-		HasherCost:            hasherCost,
-	}
+		ServerPort:            env("SERVER_PORT", "8080"),
+		ServerShutdownTimeout: envParse("SERVER_SHUTDOWN_TIMEOUT", 5*time.Second, time.ParseDuration),
+		ServerReadTimeOut:     envParse("SERVER_READ_TIMEOUT", 10*time.Second, time.ParseDuration),
+		ServerWriteTimeOut:    envParse("SERVER_WRITE_TIMEOUT", 10*time.Second, time.ParseDuration),
+		ServerIdleTimeOut:     envParse("SERVER_IDLE_TIMEOUT", 60*time.Second, time.ParseDuration),
+		Environment:           envParse("ENVIRONMENT", EnvironmentDevelopment, validEnvironment),
+		DBHost:                env("DB_HOST", "localhost"),
+		DBPort:                env("DB_PORT", "5432"),
+		DBUser:                env("DB_USER", "postgres"),
+		DBName:                env("DB_NAME", "hexago"),
+		DBPassword:            env("DB_PASSWORD", ""),
+		DBSSLMode:             envParse("DB_SSLMODE", "disable", validSSLMode),
+		DBTimeZone:            env("DB_TIMEZONE", "UTC"),
+		DBMaxOpenConns:        envParse("DB_MAX_OPEN_CONNS", 25, strconv.Atoi),
+		DBMaxIdleConns:        envParse("DB_MAX_IDLE_CONNS", 25, strconv.Atoi),
+		DBConnMaxLifeTime:     envParse("DB_CONN_MAX_LIFETIME", 5*time.Minute, time.ParseDuration),
+		DBAutoMigration:       envParse("DB_AUTO_MIGRATION", false, strconv.ParseBool),
+		HasherCost:            envParse("HASHER_COST", 12, strconv.Atoi),
+		JWTSecret:             env("JWT_SECRET", ""),
+		JWTExpiration:         envParse("JWT_EXPIRATION", 24*time.Hour, time.ParseDuration),
+	}, nil
 }
 
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
+func env(key, fallback string) string {
+	value, ok := os.LookupEnv(key)
+	if !ok || value == "" {
+		return fallback
 	}
-	return defaultValue
+	return value
+}
+
+func envParse[T any](key string, fallback T, parse func(string) (T, error)) T {
+	value, ok := os.LookupEnv(key)
+	if !ok || value == "" {
+		return fallback
+	}
+	parsed, err := parse(value)
+	if err != nil {
+		log.Printf("config: invalid %s (%v); using default %v", key, err, fallback)
+		return fallback
+	}
+	return parsed
+}
+
+func validEnvironment(value string) (Environment, error) {
+	env := Environment(value)
+	if env != EnvironmentDevelopment && env != EnvironmentProduction {
+		return "", fmt.Errorf("must be one of %s, %s", EnvironmentDevelopment, EnvironmentProduction)
+	}
+	return env, nil
+}
+
+func validSSLMode(value string) (string, error) {
+	switch value {
+	case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+		return value, nil
+	}
+	return "", fmt.Errorf("must be one of disable, allow, prefer, require, verify-ca, verify-full")
 }

@@ -57,12 +57,11 @@ func (l *GormLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql 
 	}
 }
 
-func resolveGormLogLevel(env string) gormlogger.LogLevel {
-	if env == "release" {
+func resolveGormLogLevel(env config.Environment) gormlogger.LogLevel {
+	if env == config.EnvironmentProduction {
 		return gormlogger.Silent
-	} else {
-		return gormlogger.Info
 	}
+	return gormlogger.Info
 }
 
 func DatabaseURL(cfg *config.Config) string {

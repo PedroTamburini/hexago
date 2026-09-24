@@ -15,7 +15,7 @@ type Logger struct {
 func NewLogger(cfg *config.Config) *Logger {
 	var handler slog.Handler
 
-	if cfg.Environment == "release" {
+	if cfg.IsProduction() {
 		handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level:     slog.LevelInfo,
 			AddSource: true,

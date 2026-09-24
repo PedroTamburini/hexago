@@ -1,0 +1,64 @@
+package handler
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
+	"github.com/PedroTamburini/hexago/internal/domain/dto"
+	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
+	"github.com/PedroTamburini/hexago/internal/domain/port"
+	"github.com/gin-gonic/gin"
+)
+
+type AuthHandler struct {
+	controller port.AuthController
+}
+
+func NewAuthHandler(controller port.AuthController) *AuthHandler {
+	return &AuthHandler{controller: controller}
+}
+
+func (h *AuthHandler) Register(router *gin.RouterGroup) {
+	router.POST("", h.Authenticate)
+}
+
+func (h *AuthHandler) Authenticate(ctx *gin.Context) {
+	var body request.AuthenticateBodyRequest
+
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	input := dto.AuthenticateInput{
+		Username: body.Username,
+		Password: body.Password,
+	}
+
+	output, err := h.controller.Authenticate(ctx, input)
+	if err != nil {
+		if errors.Is(err, domainerr.ErrInvalidCredentials) {
+			ctx.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid credentials",
+			})
+			return
+		}
+
+		_ = ctx.Error(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	resp := response.AuthenticateResponse{
+		Token:    output.Token,
+		ExpireIn: output.ExpireIn,
+	}
+
+	ctx.JSON(http.StatusOK, resp)
+}

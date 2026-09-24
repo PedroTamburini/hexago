@@ -13,7 +13,7 @@ type Router struct {
 }
 
 func NewRouter(logger *logger.Logger, cfg *config.Config) *Router {
-	if cfg.Environment == "release" {
+	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
@@ -33,12 +33,14 @@ func NewRouter(logger *logger.Logger, cfg *config.Config) *Router {
 func (r *Router) RegisterRoutes(handlers *Handlers) {
 	v1 := r.engine.Group("/api/v1")
 	{
+		handlers.Auth.Register(v1.Group("/auth"))
 		handlers.User.Register(v1.Group("/users"))
 	}
 }
 
 type Handlers struct {
 	User *handler.UserHandler
+	Auth *handler.AuthHandler
 }
 
 func (r *Router) Engine() *gin.Engine {

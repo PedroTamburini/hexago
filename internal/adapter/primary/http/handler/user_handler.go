@@ -4,21 +4,29 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/controller"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
+	"github.com/PedroTamburini/hexago/internal/domain/dto"
 	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
+	"github.com/PedroTamburini/hexago/internal/domain/port"
+	"github.com/PedroTamburini/hexago/internal/infrastructure/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	controller *controller.UserController
+	controller port.UserController
+	jwtService port.JWTService
 }
 
-func NewUserHandler(controller *controller.UserController) *UserHandler {
-	return &UserHandler{controller: controller}
+func NewUserHandler(controller port.UserController, jwtService port.JWTService) *UserHandler {
+	return &UserHandler{
+		controller: controller,
+		jwtService: jwtService,
+	}
 }
 
 func (h *UserHandler) Register(router *gin.RouterGroup) {
+	router.Use(middleware.JWTAuthMiddleware(h.jwtService))
 	router.POST("", h.Create)
 	router.GET("/:id", h.Get)
 	router.GET("", h.List)
@@ -36,7 +44,14 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := h.controller.Create(ctx.Request.Context(), body)
+	input := dto.CreateUserInput{
+		Name:     body.Name,
+		Username: body.Username,
+		Email:    body.Email,
+		Password: body.Password,
+	}
+
+	output, err := h.controller.Create(ctx.Request.Context(), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrInvalidName):
@@ -71,6 +86,13 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 		return
 	}
 
+	resp := response.CreateUserResponse{
+		ID:       output.ID,
+		Name:     output.Name,
+		Username: output.Username,
+		Email:    output.Email,
+	}
+
 	ctx.JSON(http.StatusCreated, resp)
 }
 
@@ -84,7 +106,9 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := h.controller.FindByID(ctx.Request.Context(), uri)
+	input := dto.FindUserByIDInput{ID: uri.ID}
+
+	output, err := h.controller.FindByID(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{
@@ -100,6 +124,17 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 		return
 	}
 
+	resp := response.FindUserByIDResponse{
+		ID:        output.ID,
+		Name:      output.Name,
+		Username:  output.Username,
+		Email:     output.Email,
+		IsAdmin:   output.IsAdmin,
+		IsActive:  output.IsActive,
+		CreatedAt: output.CreatedAt,
+		UpdatedAt: output.UpdatedAt,
+	}
+
 	ctx.JSON(http.StatusOK, resp)
 }
 
@@ -112,12 +147,36 @@ func (h *UserHandler) List(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := h.controller.FindAll(ctx.Request.Context(), query)
+	input := dto.FindAllUsersInput{
+		Limit:  query.Limit,
+		Offset: query.Offset,
+	}
+
+	output, err := h.controller.FindAll(ctx.Request.Context(), input)
 	if err != nil {
 		_ = ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal server error",
 		})
+		return
+	}
+
+	users := make([]*response.UserResponse, len(output.Users))
+	for i, user := range output.Users {
+		users[i] = &response.UserResponse{
+			ID:        user.ID,
+			Name:      user.Name,
+			Username:  user.Username,
+			Email:     user.Email,
+			IsAdmin:   user.IsAdmin,
+			IsActive:  user.IsActive,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		}
+	}
+
+	resp := response.FindAllUsersResponse{
+		Users: users,
 	}
 
 	ctx.JSON(http.StatusOK, resp)
@@ -140,7 +199,14 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 		return
 	}
 
-	resp, err := h.controller.Update(ctx.Request.Context(), uri, body)
+	input := dto.UpdateUserInput{
+		ID:       uri.ID,
+		Name:     body.Name,
+		Username: body.Username,
+		Email:    body.Email,
+	}
+
+	output, err := h.controller.Update(ctx.Request.Context(), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrUserNotFound):
@@ -181,6 +247,14 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 		return
 	}
 
+	resp := response.UpdateUserResponse{
+		ID:        output.ID,
+		Name:      output.Name,
+		Username:  output.Username,
+		Email:     output.Email,
+		UpdatedAt: output.UpdatedAt,
+	}
+
 	ctx.JSON(http.StatusOK, resp)
 }
 
@@ -194,7 +268,9 @@ func (h *UserHandler) Delete(ctx *gin.Context) {
 		return
 	}
 
-	err := h.controller.Delete(ctx.Request.Context(), uri)
+	input := dto.DeleteUserInput{ID: uri.ID}
+
+	err := h.controller.Delete(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{
