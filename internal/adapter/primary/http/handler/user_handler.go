@@ -30,6 +30,20 @@ func (h *UserHandler) Register(router *gin.RouterGroup) {
 	router.DELETE("/:id", h.Delete)
 }
 
+// Create godoc
+// @Summary      Create user
+// @Description  Creates a new user.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      request.CreateUserBodyRequest  true  "New user"
+// @Success      201  {object}  response.CreateUserResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      409  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /users [post]
 func (h *UserHandler) Create(ctx *gin.Context) {
 	var body request.CreateUserBodyRequest
 
@@ -92,6 +106,19 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, resp)
 }
 
+// Get godoc
+// @Summary      Get user
+// @Description  Returns a user by ID.
+// @Tags         users
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  response.FindUserByIDResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /users/{id} [get]
 func (h *UserHandler) Get(ctx *gin.Context) {
 	var uri request.FindUserByIDUriRequest
 
@@ -134,6 +161,19 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, resp)
 }
 
+// List godoc
+// @Summary      List users
+// @Description  Returns a paginated list of users.
+// @Tags         users
+// @Produce      json
+// @Security     BearerAuth
+// @Param        limit   query     int  false  "Maximum number of records to return (default 20, max 100)"
+// @Param        offset  query     int  false  "Number of records to skip"
+// @Success      200     {object}  response.FindAllUsersResponse
+// @Failure      400     {object}  response.ErrorResponse
+// @Failure      401     {object}  response.ErrorResponse
+// @Failure      500     {object}  response.ErrorResponse
+// @Router       /users [get]
 func (h *UserHandler) List(ctx *gin.Context) {
 	var query request.FindAllUsersQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
@@ -178,6 +218,22 @@ func (h *UserHandler) List(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, resp)
 }
 
+// Update godoc
+// @Summary      Update user
+// @Description  Updates an existing user.
+// @Tags         users
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id    path      int                          true  "User ID"
+// @Param        body  body      request.UpdateUserBodyRequest  true  "Updated user"
+// @Success      200   {object}  response.UpdateUserResponse
+// @Failure      400   {object}  response.ErrorResponse
+// @Failure      401   {object}  response.ErrorResponse
+// @Failure      404   {object}  response.ErrorResponse
+// @Failure      409   {object}  response.ErrorResponse
+// @Failure      500   {object}  response.ErrorResponse
+// @Router       /users/{id} [put]
 func (h *UserHandler) Update(ctx *gin.Context) {
 	var uri request.UpdateUserUriRequest
 	if err := ctx.ShouldBindUri(&uri); err != nil {
@@ -254,6 +310,18 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, resp)
 }
 
+// Delete godoc
+// @Summary      Delete user
+// @Description  Deletes an existing user.
+// @Tags         users
+// @Security     BearerAuth
+// @Param        id   path      int  true  "User ID"
+// @Success      204  "User deleted"
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      404  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /users/{id} [delete]
 func (h *UserHandler) Delete(ctx *gin.Context) {
 	var uri request.DeleteUserUriRequest
 

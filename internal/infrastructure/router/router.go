@@ -10,8 +10,9 @@ import (
 )
 
 type Router struct {
-	engine *gin.Engine
-	tokens port.TokenValidator
+	engine     *gin.Engine
+	tokens     port.TokenValidator
+	docsEnable bool
 }
 
 func NewRouter(logger *logger.Logger, cfg *config.Config, tokens port.TokenValidator) *Router {
@@ -28,8 +29,13 @@ func NewRouter(logger *logger.Logger, cfg *config.Config, tokens port.TokenValid
 	)
 
 	r := &Router{
-		engine: engine,
-		tokens: tokens,
+		engine:     engine,
+		tokens:     tokens,
+		docsEnable: !cfg.IsProduction(),
+	}
+
+	if r.docsEnable {
+		registerDocs(engine)
 	}
 
 	return r

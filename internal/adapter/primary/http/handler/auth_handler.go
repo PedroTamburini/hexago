@@ -24,6 +24,18 @@ func (h *AuthHandler) Register(router *gin.RouterGroup) {
 	router.POST("", h.Authenticate)
 }
 
+// Authenticate godoc
+// @Summary      Authenticate
+// @Description  Authenticates a user and returns an access token.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      request.AuthenticateBodyRequest  true  "User credentials"
+// @Success      200  {object}  response.AuthenticateResponse
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /auth [post]
 func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 	var body request.AuthenticateBodyRequest
 

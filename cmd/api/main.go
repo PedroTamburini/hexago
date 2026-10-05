@@ -1,3 +1,14 @@
+// Package main bootstraps the hexago API.
+//
+//	@title						hexago API
+//	@version					1.0
+//	@description				REST API built with hexagonal architecture.
+//	@description				Obtain a token via /auth and send it as a Bearer token.
+//	@BasePath					/api/v1
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Type "Bearer" followed by a space and the access token.
 package main
 
 import (
