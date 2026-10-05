@@ -7,6 +7,7 @@ import (
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
 	"github.com/PedroTamburini/hexago/internal/application/usecase"
+	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/repository"
@@ -48,26 +49,27 @@ func run() error {
 		}
 	}
 
-	handlers := setupHandlers(database, cfg)
+	tokens := security.NewJWTService(cfg)
 
-	srv := server.NewServer(cfg, log, handlers)
+	handlers := setupHandlers(database, cfg, tokens)
+
+	srv := server.NewServer(cfg, log, handlers, tokens)
 	return srv.Start()
 }
 
-func setupHandlers(db *gorm.Database, cfg *config.Config) *router.Handlers {
+func setupHandlers(db *gorm.Database, cfg *config.Config, tokens port.TokenService) *router.Handlers {
 	// Repository
 	userRepository := repository.NewUserRepository(db.DB)
 
-	// Services
-	jwtService := security.NewJWTService(cfg)
-	hasherService := security.NewPasswordHasherService(cfg.HasherCost)
+	// Adapters
+	hasher := security.NewPasswordHasher(cfg.HasherCost)
 
 	// Use cases
-	userUseCase := usecase.NewUserUseCase(userRepository, hasherService)
-	authUseCase := usecase.NewAuthUseCase(userRepository, hasherService, jwtService)
+	userUseCase := usecase.NewUserUseCase(userRepository, hasher)
+	authUseCase := usecase.NewAuthUseCase(userRepository, hasher, tokens)
 
 	// Handlers
-	userHandler := handler.NewUserHandler(userUseCase, jwtService)
+	userHandler := handler.NewUserHandler(userUseCase)
 	authHandler := handler.NewAuthHandler(authUseCase)
 
 	return &router.Handlers{

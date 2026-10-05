@@ -16,7 +16,7 @@ type jwtService struct {
 	expiration time.Duration
 }
 
-func NewJWTService(cfg *config.Config) port.JWTService {
+func NewJWTService(cfg *config.Config) port.TokenService {
 	return &jwtService{
 		secretKey:  []byte(cfg.JWTSecret),
 		expiration: cfg.JWTExpiration,

@@ -16,19 +16,19 @@ const (
 	MaxLimit = 100
 )
 
-type UserUseCase struct {
+type userUseCase struct {
 	repo   port.UserRepository
-	hasher port.PasswordHasherService
+	hasher port.PasswordHasher
 }
 
-func NewUserUseCase(repo port.UserRepository, hasher port.PasswordHasherService) port.UserUseCase {
-	return &UserUseCase{
+func NewUserUseCase(repo port.UserRepository, hasher port.PasswordHasher) port.UserUseCase {
+	return &userUseCase{
 		repo:   repo,
 		hasher: hasher,
 	}
 }
 
-func (uc *UserUseCase) Create(ctx context.Context, input dto.CreateUserInput) (*dto.CreateUserOutput, error) {
+func (uc *userUseCase) Create(ctx context.Context, input dto.CreateUserInput) (*dto.CreateUserOutput, error) {
 	user, err := entity.NewUser(input.Name, input.Username, input.Email)
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (uc *UserUseCase) Create(ctx context.Context, input dto.CreateUserInput) (*
 	}, nil
 }
 
-func (uc *UserUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput) (*dto.FindUserByIDOutput, error) {
+func (uc *userUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput) (*dto.FindUserByIDOutput, error) {
 	user, err := uc.repo.FindByID(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (uc *UserUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput
 	}, nil
 }
 
-func (uc *UserUseCase) FindAll(ctx context.Context, input dto.FindAllUsersInput) (*dto.FindAllUsersOutput, error) {
+func (uc *userUseCase) FindAll(ctx context.Context, input dto.FindAllUsersInput) (*dto.FindAllUsersOutput, error) {
 	limit, offset := normalizePagination(input.Limit, input.Offset)
 
 	users, err := uc.repo.FindAll(ctx, limit, offset)
@@ -98,7 +98,7 @@ func (uc *UserUseCase) FindAll(ctx context.Context, input dto.FindAllUsersInput)
 	}, nil
 }
 
-func (uc *UserUseCase) Update(ctx context.Context, input dto.UpdateUserInput) (*dto.UpdateUserOutput, error) {
+func (uc *userUseCase) Update(ctx context.Context, input dto.UpdateUserInput) (*dto.UpdateUserOutput, error) {
 	user, err := uc.repo.FindByID(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (uc *UserUseCase) Update(ctx context.Context, input dto.UpdateUserInput) (*
 	}, nil
 }
 
-func (uc *UserUseCase) Delete(ctx context.Context, input dto.DeleteUserInput) error {
+func (uc *userUseCase) Delete(ctx context.Context, input dto.DeleteUserInput) error {
 	err := uc.repo.Delete(ctx, input.ID)
 	if err != nil {
 		return err

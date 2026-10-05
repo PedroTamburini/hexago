@@ -9,24 +9,20 @@ import (
 	"github.com/PedroTamburini/hexago/internal/domain/dto"
 	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
 	"github.com/PedroTamburini/hexago/internal/domain/port"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	usecase    port.UserUseCase
-	jwtService port.JWTService
+	usecase port.UserUseCase
 }
 
-func NewUserHandler(usecase port.UserUseCase, jwtService port.JWTService) *UserHandler {
-	return &UserHandler{
-		usecase:    usecase,
-		jwtService: jwtService,
-	}
+func NewUserHandler(usecase port.UserUseCase) *UserHandler {
+	return &UserHandler{usecase: usecase}
 }
 
+// Register only declares the routes. Authentication is applied by the router,
+// so this adapter stays free of infrastructure concerns.
 func (h *UserHandler) Register(router *gin.RouterGroup) {
-	router.Use(middleware.JWTAuthMiddleware(h.jwtService))
 	router.POST("", h.Create)
 	router.GET("/:id", h.Get)
 	router.GET("", h.List)

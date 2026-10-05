@@ -11,25 +11,25 @@ import (
 
 const dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
 
-type AuthUseCase struct {
+type authUseCase struct {
 	userCredentialsFinder port.UserCredentialsFinder
-	bcryptService         port.PasswordHasherService
-	jwtService            port.JWTService
+	hasher                port.PasswordHasher
+	tokens                port.TokenIssuer
 }
 
 func NewAuthUseCase(
 	userCredentialsFinder port.UserCredentialsFinder,
-	bcryptService port.PasswordHasherService,
-	jwtService port.JWTService,
+	hasher port.PasswordHasher,
+	tokens port.TokenIssuer,
 ) port.AuthUseCase {
-	return &AuthUseCase{
+	return &authUseCase{
 		userCredentialsFinder: userCredentialsFinder,
-		bcryptService:         bcryptService,
-		jwtService:            jwtService,
+		hasher:                hasher,
+		tokens:                tokens,
 	}
 }
 
-func (u *AuthUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
+func (u *authUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
 	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
 	if err != nil {
 		if !errors.Is(err, domainerr.ErrUserNotFound) {
@@ -37,7 +37,7 @@ func (u *AuthUseCase) Authenticate(ctx context.Context, input dto.AuthenticateIn
 		}
 
 		// Equalizes response time to prevent user enumeration.
-		_ = u.bcryptService.Compare(dummyPasswordHash, input.Password)
+		_ = u.hasher.Compare(dummyPasswordHash, input.Password)
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
@@ -45,17 +45,17 @@ func (u *AuthUseCase) Authenticate(ctx context.Context, input dto.AuthenticateIn
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	if err := u.bcryptService.Compare(credentials.PasswordHash, input.Password); err != nil {
+	if err := u.hasher.Compare(credentials.PasswordHash, input.Password); err != nil {
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	token, err := u.jwtService.GenerateToken(credentials.ID)
+	token, err := u.tokens.GenerateToken(credentials.ID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &dto.AuthenticateOutput{
 		Token:    token,
-		ExpireIn: u.jwtService.ExpireSeconds(),
+		ExpireIn: u.tokens.ExpireSeconds(),
 	}, nil
 }

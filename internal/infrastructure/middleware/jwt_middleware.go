@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func JWTAuthMiddleware(jwtService port.JWTService) gin.HandlerFunc {
+func JWTAuthMiddleware(tokenValidator port.TokenValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -23,18 +23,16 @@ func JWTAuthMiddleware(jwtService port.JWTService) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := jwtService.ValidateToken(parts[1])
+		userID, err := tokenValidator.ValidateToken(parts[1])
 		if err != nil {
 			abortWithError(c, http.StatusUnauthorized, domainerr.ErrInvalidToken, "invalid or expired token")
 			return
 		}
 
-		c.Set(UserIDContextKey, userID)
+		c.Set("userID", userID)
 		c.Next()
 	}
 }
-
-const UserIDContextKey = "userID"
 
 func abortWithError(c *gin.Context, status int, cause error, message string) {
 	_ = c.Error(cause)

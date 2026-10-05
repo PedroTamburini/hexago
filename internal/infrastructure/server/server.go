@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/router"
@@ -20,19 +21,19 @@ type Server struct {
 	logger *logger.Logger
 }
 
-func NewServer(cfg *config.Config, logger *logger.Logger, handlers *router.Handlers) *Server {
-	router := router.NewRouter(logger, cfg)
-	router.RegisterRoutes(handlers)
+func NewServer(cfg *config.Config, logger *logger.Logger, handlers *router.Handlers, tokens port.TokenValidator) *Server {
+	rt := router.NewRouter(logger, cfg, tokens)
+	rt.RegisterRoutes(handlers)
 
 	return &Server{
 		http: &http.Server{
 			Addr:         ":" + cfg.ServerPort,
-			Handler:      router.Engine(),
+			Handler:      rt.Engine(),
 			ReadTimeout:  cfg.ServerReadTimeOut,
 			WriteTimeout: cfg.ServerWriteTimeOut,
 			IdleTimeout:  cfg.ServerIdleTimeOut,
 		},
-		router: router,
+		router: rt,
 		config: cfg,
 		logger: logger,
 	}
