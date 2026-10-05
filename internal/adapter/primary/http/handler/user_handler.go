@@ -34,8 +34,8 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 	var body request.CreateUserBodyRequest
 
 	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid request body",
 		})
 		return
 	}
@@ -51,33 +51,33 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrInvalidName):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid name",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid name",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrInvalidUsername):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid username",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid username",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrInvalidEmail):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid email",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid email",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrUserAlreadyExists):
-			ctx.JSON(http.StatusConflict, gin.H{
-				"error": "user already exists",
+			ctx.JSON(http.StatusConflict, response.ErrorResponse{
+				Error: "user already exists",
 			})
 			return
 		}
 
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}
@@ -96,8 +96,8 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 	var uri request.FindUserByIDUriRequest
 
 	if err := ctx.ShouldBindUri(&uri); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid param",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid param",
 		})
 		return
 	}
@@ -107,15 +107,15 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 	output, err := h.usecase.FindByID(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{
-				"error": "user not found",
+			ctx.JSON(http.StatusNotFound, response.ErrorResponse{
+				Error: "user not found",
 			})
 			return
 		}
 
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}
@@ -137,8 +137,8 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 func (h *UserHandler) List(ctx *gin.Context) {
 	var query request.FindAllUsersQuery
 	if err := ctx.ShouldBindQuery(&query); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid query",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid query",
 		})
 		return
 	}
@@ -151,8 +151,8 @@ func (h *UserHandler) List(ctx *gin.Context) {
 	output, err := h.usecase.FindAll(ctx.Request.Context(), input)
 	if err != nil {
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}
@@ -181,16 +181,16 @@ func (h *UserHandler) List(ctx *gin.Context) {
 func (h *UserHandler) Update(ctx *gin.Context) {
 	var uri request.UpdateUserUriRequest
 	if err := ctx.ShouldBindUri(&uri); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid param",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid param",
 		})
 		return
 	}
 
 	var body request.UpdateUserBodyRequest
 	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid request body",
 		})
 		return
 	}
@@ -206,39 +206,39 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrUserNotFound):
-			ctx.JSON(http.StatusNotFound, gin.H{
-				"error": "user not found",
+			ctx.JSON(http.StatusNotFound, response.ErrorResponse{
+				Error: "user not found",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrInvalidName):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid name",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid name",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrInvalidUsername):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid username",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid username",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrInvalidEmail):
-			ctx.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid email",
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid email",
 			})
 			return
 
 		case errors.Is(err, domainerr.ErrUserAlreadyExists):
-			ctx.JSON(http.StatusConflict, gin.H{
-				"error": "user already exists",
+			ctx.JSON(http.StatusConflict, response.ErrorResponse{
+				Error: "user already exists",
 			})
 			return
 		}
 
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}
@@ -258,8 +258,8 @@ func (h *UserHandler) Delete(ctx *gin.Context) {
 	var uri request.DeleteUserUriRequest
 
 	if err := ctx.ShouldBindUri(&uri); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid param",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid param",
 		})
 		return
 	}
@@ -268,20 +268,18 @@ func (h *UserHandler) Delete(ctx *gin.Context) {
 
 	if err := h.usecase.Delete(ctx.Request.Context(), input); err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
-			ctx.JSON(http.StatusNotFound, gin.H{
-				"error": "user not found",
+			ctx.JSON(http.StatusNotFound, response.ErrorResponse{
+				Error: "user not found",
 			})
 			return
 		}
 
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{
-		"info": "user deleted successfully",
-	})
+	ctx.Status(http.StatusNoContent)
 }

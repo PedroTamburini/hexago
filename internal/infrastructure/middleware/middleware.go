@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -76,7 +77,7 @@ func Recovery(logger *logger.Logger) gin.HandlerFunc {
 					"error", err,
 					"request_id", ctx.GetString("request_id"),
 				)
-				ctx.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, response.ErrorResponse{Error: "internal server error"})
 			}
 		}()
 		ctx.Next()

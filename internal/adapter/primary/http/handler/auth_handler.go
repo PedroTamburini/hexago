@@ -28,8 +28,8 @@ func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 	var body request.AuthenticateBodyRequest
 
 	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid request body",
 		})
 		return
 	}
@@ -42,15 +42,15 @@ func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 	output, err := h.usecase.Authenticate(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrInvalidCredentials) {
-			ctx.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid credentials",
+			ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
+				Error: "invalid credentials",
 			})
 			return
 		}
 
 		_ = ctx.Error(err)
-		ctx.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
 		})
 		return
 	}

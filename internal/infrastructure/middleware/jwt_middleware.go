@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
 	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
 	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/gin-gonic/gin"
@@ -37,5 +38,5 @@ func JWTAuthMiddleware(tokenValidator port.TokenValidator) gin.HandlerFunc {
 func abortWithError(c *gin.Context, status int, cause error, message string) {
 	_ = c.Error(cause)
 	c.Header("WWW-Authenticate", "Bearer")
-	c.AbortWithStatusJSON(status, gin.H{"error": message})
+	c.AbortWithStatusJSON(status, response.ErrorResponse{Error: message})
 }
