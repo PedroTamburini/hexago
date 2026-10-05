@@ -8,6 +8,14 @@ import (
 	"github.com/PedroTamburini/hexago/internal/domain/port"
 )
 
+const (
+	// DefaultLimit is applied when the caller does not provide a limit, so an
+	// omitted value never reaches the repository as a zero limit.
+	DefaultLimit = 20
+	// MaxLimit is the hard cap of records returned by a single page.
+	MaxLimit = 100
+)
+
 type UserUseCase struct {
 	repo   port.UserRepository
 	hasher port.PasswordHasherService
@@ -63,27 +71,10 @@ func (uc *UserUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput
 	}, nil
 }
 
-func (uc *UserUseCase) FindByUsername(ctx context.Context, input dto.FindUserByUsernameInput) (*dto.FindUserByUsernameOutput, error) {
-	user, err := uc.repo.FindByUsername(ctx, input.Username)
-	if err != nil {
-		return nil, err
-	}
-
-	return &dto.FindUserByUsernameOutput{
-		ID:           user.ID,
-		Name:         user.Name,
-		Username:     user.Username,
-		Email:        user.Email,
-		PasswordHash: user.PasswordHash,
-		IsAdmin:      user.IsAdmin,
-		IsActive:     user.IsActive,
-		CreatedAt:    user.CreatedAt,
-		UpdatedAt:    user.UpdatedAt,
-	}, nil
-}
-
 func (uc *UserUseCase) FindAll(ctx context.Context, input dto.FindAllUsersInput) (*dto.FindAllUsersOutput, error) {
-	users, err := uc.repo.FindAll(ctx, input.Limit, input.Offset)
+	limit, offset := normalizePagination(input.Limit, input.Offset)
+
+	users, err := uc.repo.FindAll(ctx, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -137,4 +128,22 @@ func (uc *UserUseCase) Delete(ctx context.Context, input dto.DeleteUserInput) er
 	}
 
 	return nil
+}
+
+// normalizePagination clamps caller supplied pagination values so the
+// repository never receives a non positive limit (which GORM would translate
+// into "LIMIT 0") or a negative offset.
+func normalizePagination(limit, offset int) (int, int) {
+	switch {
+	case limit <= 0:
+		limit = DefaultLimit
+	case limit > MaxLimit:
+		limit = MaxLimit
+	}
+
+	if offset < 0 {
+		offset = 0
+	}
+
+	return limit, offset
 }

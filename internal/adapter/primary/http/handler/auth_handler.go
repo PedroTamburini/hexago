@@ -13,11 +13,11 @@ import (
 )
 
 type AuthHandler struct {
-	controller port.AuthController
+	usecase port.AuthUseCase
 }
 
-func NewAuthHandler(controller port.AuthController) *AuthHandler {
-	return &AuthHandler{controller: controller}
+func NewAuthHandler(usecase port.AuthUseCase) *AuthHandler {
+	return &AuthHandler{usecase: usecase}
 }
 
 func (h *AuthHandler) Register(router *gin.RouterGroup) {
@@ -39,7 +39,7 @@ func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 		Password: body.Password,
 	}
 
-	output, err := h.controller.Authenticate(ctx, input)
+	output, err := h.usecase.Authenticate(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrInvalidCredentials) {
 			ctx.JSON(http.StatusUnauthorized, gin.H{

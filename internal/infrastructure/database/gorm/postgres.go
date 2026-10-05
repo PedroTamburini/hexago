@@ -104,6 +104,22 @@ func NewPostgresConnection(cfg *config.Config, logger *logger.Logger) (*Database
 	return &Database{db}, nil
 }
 
+// Drains and closes the underlying connection pool. It must be called
+// during shutdown so in flight queries are finished and the database is not
+// left holding connections from a process that is going away.
+func (d *Database) Close() error {
+	sqlDB, err := d.DB.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get database instance: %w", err)
+	}
+
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("failed to close database: %w", err)
+	}
+
+	return nil
+}
+
 func RunAutoMigrations(db *Database) error {
 	return db.AutoMigrate(
 		&model.UserModel{},
@@ -111,17 +127,17 @@ func RunAutoMigrations(db *Database) error {
 }
 
 // For larger projects with more robust infrastructure, prefer:
-
+//
 // Migrations created/tested locally (golang-migrate)
 // migrate create \
 //   -ext sql \
 //   -dir internal/infrastructure/database/migrations \
 //   add_..._to_users
-
+//
 // migrate ... up
 // migrate ... down 1
 // migrate ... up
-
+//
 // And applied in production via CLI in the GitLab deployment pipeline
 // migrate \
 //   -path ./internal/infrastructure/database/migrations \

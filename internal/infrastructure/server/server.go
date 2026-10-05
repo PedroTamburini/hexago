@@ -59,25 +59,37 @@ func (s *Server) Start() error {
 
 	select {
 	case err := <-errCh:
-		gracefullyShutdown(s)
+		shutdownErr := s.shutdown()
+		if shutdownErr != nil {
+			s.logger.Error("shutdown after server failure", "error", shutdownErr)
+		}
 		return err
 
-	case <-quit:
-		gracefullyShutdown(s)
-		return nil
+	case sig := <-quit:
+		s.logger.Info("shutdown signal received", "signal", sig.String())
+		return s.shutdown()
 	}
 }
 
-func gracefullyShutdown(s *Server) {
+// shutdown drains in flight requests within the configured timeout. On timeout
+// it forces the listener closed and returns the error so the caller can decide
+// the exit code, instead of panicking and skipping the remaining cleanup.
+func (s *Server) shutdown() error {
 	s.logger.Info("shutting down server...")
 
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), s.config.ServerShutdownTimeout)
 	defer cancel()
 
 	if err := s.http.Shutdown(ctxTimeout); err != nil {
-		s.logger.Error("server failed to shutdown", "error", err)
-		panic(err)
+		s.logger.Error("graceful shutdown failed, forcing close", "error", err)
+
+		if closeErr := s.http.Close(); closeErr != nil {
+			s.logger.Error("forced close failed", "error", closeErr)
+		}
+
+		return err
 	}
 
 	s.logger.Info("server exited gracefully")
+	return nil
 }

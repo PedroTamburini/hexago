@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/controller"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
 	"github.com/PedroTamburini/hexago/internal/application/usecase"
@@ -17,34 +16,42 @@ import (
 )
 
 func main() {
-	config, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid configuration: %v\n", err)
+	// os.Exit is kept out of run() so deferred cleanup (database close) always
+	// executes, no matter which path the process takes.
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
+}
 
-	logger := logger.NewLogger(config)
-
-	database, err := gorm.NewPostgresConnection(config, logger)
+func run() error {
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		logger.Error("failed to connect to database", "error", err.Error())
-		os.Exit(1)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	if config.DBAutoMigration {
+	log := logger.NewLogger(cfg)
+
+	database, err := gorm.NewPostgresConnection(cfg, log)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Error("failed to close database", "error", err)
+		}
+	}()
+
+	if cfg.DBAutoMigration {
 		if err := gorm.RunAutoMigrations(database); err != nil {
-			logger.Error("failed to run migrations", "error", err.Error())
-			os.Exit(1)
+			return err
 		}
 	}
 
-	handlers := setupHandlers(database, config)
+	handlers := setupHandlers(database, cfg)
 
-	server := server.NewServer(config, logger, handlers)
-	if err := server.Start(); err != nil {
-		logger.Error("server failed to start", "error", err.Error())
-		os.Exit(1)
-	}
+	srv := server.NewServer(cfg, log, handlers)
+	return srv.Start()
 }
 
 func setupHandlers(db *gorm.Database, cfg *config.Config) *router.Handlers {
@@ -57,20 +64,14 @@ func setupHandlers(db *gorm.Database, cfg *config.Config) *router.Handlers {
 
 	// Use cases
 	userUseCase := usecase.NewUserUseCase(userRepository, hasherService)
-	authUseCase := usecase.NewAuthUseCase(userUseCase, hasherService, jwtService)
-
-	// Controllers
-	userController := controller.NewUserController(userUseCase)
-	authController := controller.NewAuthController(authUseCase)
+	authUseCase := usecase.NewAuthUseCase(userRepository, hasherService, jwtService)
 
 	// Handlers
-	userHandler := handler.NewUserHandler(userController, jwtService)
-	authHandler := handler.NewAuthHandler(authController)
+	userHandler := handler.NewUserHandler(userUseCase, jwtService)
+	authHandler := handler.NewAuthHandler(authUseCase)
 
-	handlers := &router.Handlers{
+	return &router.Handlers{
 		User: userHandler,
 		Auth: authHandler,
 	}
-
-	return handlers
 }

@@ -14,13 +14,13 @@ import (
 )
 
 type UserHandler struct {
-	controller port.UserController
+	usecase    port.UserUseCase
 	jwtService port.JWTService
 }
 
-func NewUserHandler(controller port.UserController, jwtService port.JWTService) *UserHandler {
+func NewUserHandler(usecase port.UserUseCase, jwtService port.JWTService) *UserHandler {
 	return &UserHandler{
-		controller: controller,
+		usecase:    usecase,
 		jwtService: jwtService,
 	}
 }
@@ -51,7 +51,7 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 		Password: body.Password,
 	}
 
-	output, err := h.controller.Create(ctx.Request.Context(), input)
+	output, err := h.usecase.Create(ctx.Request.Context(), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrInvalidName):
@@ -108,7 +108,7 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 
 	input := dto.FindUserByIDInput{ID: uri.ID}
 
-	output, err := h.controller.FindByID(ctx.Request.Context(), input)
+	output, err := h.usecase.FindByID(ctx.Request.Context(), input)
 	if err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{
@@ -152,7 +152,7 @@ func (h *UserHandler) List(ctx *gin.Context) {
 		Offset: query.Offset,
 	}
 
-	output, err := h.controller.FindAll(ctx.Request.Context(), input)
+	output, err := h.usecase.FindAll(ctx.Request.Context(), input)
 	if err != nil {
 		_ = ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -206,7 +206,7 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 		Email:    body.Email,
 	}
 
-	output, err := h.controller.Update(ctx.Request.Context(), input)
+	output, err := h.usecase.Update(ctx.Request.Context(), input)
 	if err != nil {
 		switch {
 		case errors.Is(err, domainerr.ErrUserNotFound):
@@ -270,8 +270,7 @@ func (h *UserHandler) Delete(ctx *gin.Context) {
 
 	input := dto.DeleteUserInput{ID: uri.ID}
 
-	err := h.controller.Delete(ctx.Request.Context(), input)
-	if err != nil {
+	if err := h.usecase.Delete(ctx.Request.Context(), input); err != nil {
 		if errors.Is(err, domainerr.ErrUserNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{
 				"error": "user not found",

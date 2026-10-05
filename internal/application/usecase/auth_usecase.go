@@ -12,25 +12,25 @@ import (
 const dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
 
 type AuthUseCase struct {
-	userUseCase   port.UserUseCase
-	bcryptService port.PasswordHasherService
-	jwtService    port.JWTService
+	userCredentialsFinder port.UserCredentialsFinder
+	bcryptService         port.PasswordHasherService
+	jwtService            port.JWTService
 }
 
-func NewAuthUseCase(userUseCase port.UserUseCase, bcryptService port.PasswordHasherService, jwtService port.JWTService) port.AuthUseCase {
+func NewAuthUseCase(
+	userCredentialsFinder port.UserCredentialsFinder,
+	bcryptService port.PasswordHasherService,
+	jwtService port.JWTService,
+) port.AuthUseCase {
 	return &AuthUseCase{
-		userUseCase:   userUseCase,
-		bcryptService: bcryptService,
-		jwtService:    jwtService,
+		userCredentialsFinder: userCredentialsFinder,
+		bcryptService:         bcryptService,
+		jwtService:            jwtService,
 	}
 }
 
 func (u *AuthUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
-	username := dto.FindUserByUsernameInput{
-		Username: input.Username,
-	}
-
-	user, err := u.userUseCase.FindByUsername(ctx, username)
+	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
 	if err != nil {
 		if !errors.Is(err, domainerr.ErrUserNotFound) {
 			return nil, err
@@ -41,15 +41,15 @@ func (u *AuthUseCase) Authenticate(ctx context.Context, input dto.AuthenticateIn
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	if !user.IsActive {
+	if !credentials.IsActive {
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	if err := u.bcryptService.Compare(user.PasswordHash, input.Password); err != nil {
+	if err := u.bcryptService.Compare(credentials.PasswordHash, input.Password); err != nil {
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	token, err := u.jwtService.GenerateToken(user.ID)
+	token, err := u.jwtService.GenerateToken(credentials.ID)
 	if err != nil {
 		return nil, err
 	}

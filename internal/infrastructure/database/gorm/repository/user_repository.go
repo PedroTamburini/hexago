@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/PedroTamburini/hexago/internal/domain/dto"
 	"github.com/PedroTamburini/hexago/internal/domain/entity"
 	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
@@ -46,10 +47,13 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 	return userModel.ToDomain(), nil
 }
 
-func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*entity.User, error) {
+func (r *UserRepository) FindCredentialsByUsername(ctx context.Context, username string) (*dto.UserCredentials, error) {
 	var userModel model.UserModel
 
-	err := r.db.WithContext(ctx).Where("username = ?", username).First(&userModel).Error
+	err := r.db.WithContext(ctx).
+		Select("id", "password_hash", "is_active").
+		Where("username = ?", username).
+		First(&userModel).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domainerr.ErrUserNotFound
@@ -57,7 +61,11 @@ func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*
 		return nil, err
 	}
 
-	return userModel.ToDomain(), nil
+	return &dto.UserCredentials{
+		ID:           userModel.ID,
+		PasswordHash: userModel.PasswordHash,
+		IsActive:     userModel.IsActive,
+	}, nil
 }
 
 func (r *UserRepository) FindAll(ctx context.Context, limit, offset int) ([]*entity.User, error) {
