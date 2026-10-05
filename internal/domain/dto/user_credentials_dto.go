@@ -8,5 +8,4 @@ package dto
 type UserCredentials struct {
 	ID           uint64
 	PasswordHash string
-	IsActive     bool
 }

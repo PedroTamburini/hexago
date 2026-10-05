@@ -51,8 +51,8 @@ func (r *UserRepository) FindCredentialsByUsername(ctx context.Context, username
 	var userModel model.UserModel
 
 	err := r.db.WithContext(ctx).
-		Select("id", "password_hash", "is_active").
-		Where("username = ?", username).
+		Select("id", "password_hash").
+		Where("username = ? AND is_active = ?", username, true).
 		First(&userModel).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -64,7 +64,6 @@ func (r *UserRepository) FindCredentialsByUsername(ctx context.Context, username
 	return &dto.UserCredentials{
 		ID:           userModel.ID,
 		PasswordHash: userModel.PasswordHash,
-		IsActive:     userModel.IsActive,
 	}, nil
 }
 

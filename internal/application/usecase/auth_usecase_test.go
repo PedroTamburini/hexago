@@ -84,14 +84,8 @@ func TestAuthUseCaseRejectsInvalidCredentials(t *testing.T) {
 			expectComp:   true,
 		},
 		{
-			name:         "inactive user",
-			finder:       &stubCredentialsFinder{credentials: &dto.UserCredentials{ID: 7, PasswordHash: validHash, IsActive: false}},
-			expectFinder: true,
-			expectComp:   false,
-		},
-		{
 			name:         "wrong password",
-			finder:       &stubCredentialsFinder{credentials: &dto.UserCredentials{ID: 7, PasswordHash: validHash, IsActive: true}},
+			finder:       &stubCredentialsFinder{credentials: &dto.UserCredentials{ID: 7, PasswordHash: validHash}},
 			expectFinder: true,
 			expectComp:   true,
 		},
@@ -150,7 +144,7 @@ func TestAuthUseCaseAuthenticatesActiveUser(t *testing.T) {
 	)
 
 	finder := &stubCredentialsFinder{
-		credentials: &dto.UserCredentials{ID: userID, PasswordHash: validHash, IsActive: true},
+		credentials: &dto.UserCredentials{ID: userID, PasswordHash: validHash},
 	}
 	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
 	jwt := &stubJWTService{}

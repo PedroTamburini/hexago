@@ -41,10 +41,6 @@ func (u *authUseCase) Authenticate(ctx context.Context, input dto.AuthenticateIn
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	if !credentials.IsActive {
-		return nil, domainerr.ErrInvalidCredentials
-	}
-
 	if err := u.hasher.Compare(credentials.PasswordHash, input.Password); err != nil {
 		return nil, domainerr.ErrInvalidCredentials
 	}
