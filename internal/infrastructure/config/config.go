@@ -39,6 +39,10 @@ type Config struct {
 	HasherCost            int
 	JWTSecret             string
 	JWTExpiration         time.Duration
+	SeedEnabled           bool
+	AdminUsername         string
+	AdminEmail            string
+	AdminPassword         string
 }
 
 func (c *Config) IsProduction() bool {
@@ -50,11 +54,7 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("loading .env: %w", err)
 	}
 
-	if len(env("JWT_SECRET", "")) < 32 || env("DB_PASSWORD", "") == "" {
-		return nil, errors.New("JWT_SECRET (min 32 chars) and DB_PASSWORD are required")
-	}
-
-	return &Config{
+	cfg := &Config{
 		ServerPort:            env("SERVER_PORT", "8080"),
 		ServerShutdownTimeout: envParse("SERVER_SHUTDOWN_TIMEOUT", 5*time.Second, time.ParseDuration),
 		ServerReadTimeOut:     envParse("SERVER_READ_TIMEOUT", 10*time.Second, time.ParseDuration),
@@ -75,7 +75,21 @@ func LoadConfig() (*Config, error) {
 		HasherCost:            envParse("HASHER_COST", 12, strconv.Atoi),
 		JWTSecret:             env("JWT_SECRET", ""),
 		JWTExpiration:         envParse("JWT_EXPIRATION", 24*time.Hour, time.ParseDuration),
-	}, nil
+		SeedEnabled:           envParse("SEED_ENABLED", false, strconv.ParseBool),
+		AdminUsername:         env("ADMIN_USERNAME", "admin.local"),
+		AdminEmail:            env("ADMIN_EMAIL", "admin@hexago.local"),
+		AdminPassword:         env("ADMIN_PASSWORD", ""),
+	}
+
+	if len(cfg.JWTSecret) < 32 || cfg.DBPassword == "" {
+		return nil, errors.New("JWT_SECRET (min 32 chars) and DB_PASSWORD are required")
+	}
+
+	if cfg.SeedEnabled && cfg.AdminPassword == "" {
+		return nil, errors.New("SEED_ENABLED requires ADMIN_PASSWORD to be set")
+	}
+
+	return cfg, nil
 }
 
 func env(key, fallback string) string {

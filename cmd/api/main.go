@@ -24,6 +24,7 @@ import (
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/repository"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/router"
+	"github.com/PedroTamburini/hexago/internal/infrastructure/seed"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/server"
 )
 
@@ -56,6 +57,12 @@ func run() error {
 
 	if cfg.DBAutoMigration {
 		if err := gorm.RunAutoMigrations(database); err != nil {
+			return err
+		}
+	}
+
+	if cfg.SeedEnabled {
+		if err := seed.RunSeed(database, cfg); err != nil {
 			return err
 		}
 	}
