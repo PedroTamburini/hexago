@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
 	"github.com/PedroTamburini/hexago/internal/domain/entity"
 	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
@@ -15,6 +14,20 @@ import (
 
 type UserRepository struct {
 	db *gorm.DB
+}
+
+// userReadColumns lists the columns loaded by read paths. password_hash is
+// deliberately excluded so credentials only flow through the authentication
+// repository.
+var userReadColumns = []string{
+	"id",
+	"name",
+	"username",
+	"email",
+	"is_admin",
+	"is_active",
+	"created_at",
+	"updated_at",
 }
 
 func NewUserRepository(db *gorm.DB) *UserRepository {
@@ -36,7 +49,7 @@ func (r *UserRepository) Create(ctx context.Context, user *entity.User) error {
 func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User, error) {
 	var userModel model.UserModel
 
-	err := r.db.WithContext(ctx).First(&userModel, id).Error
+	err := r.db.WithContext(ctx).Select(userReadColumns).First(&userModel, id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domainerr.ErrUserNotFound
@@ -47,40 +60,11 @@ func (r *UserRepository) FindByID(ctx context.Context, id uint64) (*entity.User,
 	return userModel.ToDomain(), nil
 }
 
-func (r *UserRepository) FindCredentialsByUsername(ctx context.Context, username string) (*dto.UserCredentials, error) {
-	var userModel model.UserModel
-
-	err := r.db.WithContext(ctx).
-		Select("id", "password_hash").
-		Where("username = ? AND is_active = ?", username, true).
-		First(&userModel).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, domainerr.ErrUserNotFound
-		}
-		return nil, err
-	}
-
-	return &dto.UserCredentials{
-		ID:           userModel.ID,
-		PasswordHash: userModel.PasswordHash,
-	}, nil
-}
-
 func (r *UserRepository) FindAll(ctx context.Context, limit, offset int) ([]*entity.User, error) {
 	var usersModel []model.UserModel
 
 	err := r.db.WithContext(ctx).
-		Select(
-			"id",
-			"name",
-			"username",
-			"email",
-			"is_admin",
-			"is_active",
-			"created_at",
-			"updated_at",
-		).
+		Select(userReadColumns).
 		Order("id ASC").
 		Limit(limit).
 		Offset(offset).
