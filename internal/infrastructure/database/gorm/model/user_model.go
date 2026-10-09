@@ -18,3 +18,7 @@ type UserModel struct {
 	UpdatedAt    time.Time
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }
+
+func (UserModel) TableName() string {
+	return "user"
+}

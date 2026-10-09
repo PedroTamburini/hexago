@@ -123,6 +123,10 @@ func (d *Database) Close() error {
 func RunAutoMigrations(db *Database) error {
 	return db.AutoMigrate(
 		&model.UserModel{},
+		&model.RoleModel{},
+		&model.UserRoleModel{},
+		&model.PermissionModel{},
+		&model.RolePermissionModel{},
 	)
 }
 
