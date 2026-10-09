@@ -1,5 +1,15 @@
 package dto
 
+type AuthenticateInput struct {
+	Username string
+	Password string
+}
+
+type AuthenticateOutput struct {
+	Token    string
+	ExpireIn int64
+}
+
 // UserCredentials carries the minimum data required to authenticate a user.
 //
 // It is intentionally kept out of the generic user output DTOs so the password
