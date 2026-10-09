@@ -30,7 +30,7 @@ func JWTAuthMiddleware(tokenValidator port.TokenValidator) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("userID", userID)
+		setUserID(c, userID)
 		c.Next()
 	}
 }

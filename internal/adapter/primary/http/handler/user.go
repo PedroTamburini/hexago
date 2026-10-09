@@ -20,16 +20,6 @@ func NewUserHandler(usecase port.UserUseCase) *UserHandler {
 	return &UserHandler{usecase: usecase}
 }
 
-// Register only declares the routes. Authentication is applied by the router,
-// so this adapter stays free of infrastructure concerns.
-func (h *UserHandler) Register(router *gin.RouterGroup) {
-	router.POST("", h.Create)
-	router.GET("/:id", h.Get)
-	router.GET("", h.List)
-	router.PUT("/:id", h.Update)
-	router.DELETE("/:id", h.Delete)
-}
-
 // Create godoc
 // @Summary      Create user
 // @Description  Creates a new user.

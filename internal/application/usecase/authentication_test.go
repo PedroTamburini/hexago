@@ -65,7 +65,7 @@ func (s *stubJWTService) ExpireSeconds() int64 { return 3600 }
 
 func (s *stubJWTService) ValidateToken(string) (uint64, error) { return 0, nil }
 
-func TestAuthUseCaseRejectsInvalidCredentials(t *testing.T) {
+func TestAuthenticationUseCaseRejectsInvalidCredentials(t *testing.T) {
 	const (
 		validHash = "$2a$12$validhash"
 		plain     = "correct-password"
@@ -96,7 +96,7 @@ func TestAuthUseCaseRejectsInvalidCredentials(t *testing.T) {
 			hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
 			jwt := &stubJWTService{}
 
-			uc := NewAuthUseCase(tc.finder, hasher, jwt)
+			uc := NewAuthenticationUseCase(tc.finder, hasher, jwt)
 
 			output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
 				Username: "john.doe",
@@ -136,7 +136,7 @@ func TestAuthUseCaseRejectsInvalidCredentials(t *testing.T) {
 	}
 }
 
-func TestAuthUseCaseAuthenticatesActiveUser(t *testing.T) {
+func TestAuthenticationUseCaseAuthenticatesActiveUser(t *testing.T) {
 	const (
 		validHash = "$2a$12$validhash"
 		plain     = "correct-password"
@@ -149,7 +149,7 @@ func TestAuthUseCaseAuthenticatesActiveUser(t *testing.T) {
 	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
 	jwt := &stubJWTService{}
 
-	uc := NewAuthUseCase(finder, hasher, jwt)
+	uc := NewAuthenticationUseCase(finder, hasher, jwt)
 
 	output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
 		Username: "john.doe",
@@ -176,14 +176,14 @@ func TestAuthUseCaseAuthenticatesActiveUser(t *testing.T) {
 	}
 }
 
-func TestAuthUseCasePropagatesUnexpectedFinderErrors(t *testing.T) {
+func TestAuthenticationUseCasePropagatesUnexpectedFinderErrors(t *testing.T) {
 	dbErr := errors.New("connection refused")
 
 	finder := &stubCredentialsFinder{err: dbErr}
 	hasher := &stubPasswordHasher{}
 	jwt := &stubJWTService{}
 
-	uc := NewAuthUseCase(finder, hasher, jwt)
+	uc := NewAuthenticationUseCase(finder, hasher, jwt)
 
 	_, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
 		Username: "john.doe",

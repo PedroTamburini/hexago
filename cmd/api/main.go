@@ -18,7 +18,6 @@ import (
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
 	"github.com/PedroTamburini/hexago/internal/application/usecase"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/repository"
@@ -67,31 +66,38 @@ func run() error {
 		}
 	}
 
-	tokens := security.NewJWTService(cfg)
+	rt := router.New(log, cfg, wire(cfg, database))
+	rt.RegisterRoutes()
 
-	handlers := setupHandlers(database, cfg, tokens)
-
-	srv := server.NewServer(cfg, log, handlers, tokens)
-	return srv.Start()
+	return server.New(cfg, log, rt.Engine()).Start()
 }
 
-func setupHandlers(db *gorm.Database, cfg *config.Config, tokens port.TokenService) *router.Handlers {
-	// Repository
+// wire is the composition root: it builds the adapters, use cases, authorization
+// checker and handlers in one place, so nothing has to be assembled piecemeal in
+// run(). It returns exactly what the router needs.
+func wire(cfg *config.Config, db *gorm.Database) router.Dependencies {
+	// Repositories (secondary adapters)
 	userRepository := repository.NewUserRepository(db.DB)
+	authenticationRepository := repository.NewAuthenticationRepository(db.DB)
+	permissionChecker := repository.NewAuthorizationRepository(db.DB)
 
-	// Adapters
+	// Supporting adapters
 	hasher := security.NewPasswordHasher(cfg.HasherCost)
+	tokens := security.NewJWTService(cfg)
 
 	// Use cases
 	userUseCase := usecase.NewUserUseCase(userRepository, hasher)
-	authUseCase := usecase.NewAuthUseCase(userRepository, hasher, tokens)
+	authenticationUseCase := usecase.NewAuthenticationUseCase(authenticationRepository, hasher, tokens)
 
-	// Handlers
-	userHandler := handler.NewUserHandler(userUseCase)
-	authHandler := handler.NewAuthHandler(authUseCase)
+	// Primary adapters (handlers)
+	handlers := &router.Handlers{
+		User: handler.NewUserHandler(userUseCase),
+		Auth: handler.NewAuthHandler(authenticationUseCase),
+	}
 
-	return &router.Handlers{
-		User: userHandler,
-		Auth: authHandler,
+	return router.Dependencies{
+		Tokens:     tokens,
+		Permission: permissionChecker,
+		Handlers:   handlers,
 	}
 }

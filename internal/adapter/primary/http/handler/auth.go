@@ -13,15 +13,11 @@ import (
 )
 
 type AuthHandler struct {
-	usecase port.AuthUseCase
+	usecase port.AuthenticationUseCase
 }
 
-func NewAuthHandler(usecase port.AuthUseCase) *AuthHandler {
+func NewAuthHandler(usecase port.AuthenticationUseCase) *AuthHandler {
 	return &AuthHandler{usecase: usecase}
-}
-
-func (h *AuthHandler) Register(router *gin.RouterGroup) {
-	router.POST("", h.Authenticate)
 }
 
 // Authenticate godoc

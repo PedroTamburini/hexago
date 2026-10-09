@@ -8,32 +8,28 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/router"
 )
 
 type Server struct {
 	http   *http.Server
-	router *router.Router
 	config *config.Config
 	logger *logger.Logger
 }
 
-func NewServer(cfg *config.Config, logger *logger.Logger, handlers *router.Handlers, tokens port.TokenValidator) *Server {
-	rt := router.NewRouter(logger, cfg, tokens)
-	rt.RegisterRoutes(handlers)
-
+// New wraps the assembled HTTP handler in a server. It only owns the HTTP
+// lifecycle (timeouts, graceful shutdown) and stays unaware of routing,
+// authentication or authorization concerns.
+func New(cfg *config.Config, logger *logger.Logger, handler http.Handler) *Server {
 	return &Server{
 		http: &http.Server{
 			Addr:         ":" + cfg.ServerPort,
-			Handler:      rt.Engine(),
+			Handler:      handler,
 			ReadTimeout:  cfg.ServerReadTimeOut,
 			WriteTimeout: cfg.ServerWriteTimeOut,
 			IdleTimeout:  cfg.ServerIdleTimeOut,
 		},
-		router: rt,
 		config: cfg,
 		logger: logger,
 	}

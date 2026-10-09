@@ -2,20 +2,30 @@ package router
 
 import (
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
+	"github.com/PedroTamburini/hexago/internal/domain/permission"
 	"github.com/PedroTamburini/hexago/internal/domain/port"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/middleware"
 	"github.com/gin-gonic/gin"
 )
 
+// Dependencies bundles everything the HTTP router needs to build the route tree.
+// Keeping it in a single struct avoids a growing list of positional constructor
+// parameters and makes the composition root explicit.
+type Dependencies struct {
+	Tokens     port.TokenValidator
+	Permission port.PermissionChecker
+	Handlers   *Handlers
+}
+
 type Router struct {
 	engine     *gin.Engine
-	tokens     port.TokenValidator
+	deps       Dependencies
 	docsEnable bool
 }
 
-func NewRouter(logger *logger.Logger, cfg *config.Config, tokens port.TokenValidator) *Router {
+func New(logger *logger.Logger, cfg *config.Config, deps Dependencies) *Router {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -30,7 +40,7 @@ func NewRouter(logger *logger.Logger, cfg *config.Config, tokens port.TokenValid
 
 	r := &Router{
 		engine:     engine,
-		tokens:     tokens,
+		deps:       deps,
 		docsEnable: !cfg.IsProduction(),
 	}
 
@@ -41,17 +51,24 @@ func NewRouter(logger *logger.Logger, cfg *config.Config, tokens port.TokenValid
 	return r
 }
 
-func (r *Router) RegisterRoutes(handlers *Handlers) {
+func (r *Router) RegisterRoutes() {
 	v1 := r.engine.Group("/api/v1")
 	{
-		handlers.Auth.Register(v1.Group("/auth"))
+		v1.POST("/auth", r.deps.Handlers.Auth.Authenticate)
 
-		// The router owns the authentication chain: primary adapters only
-		// declare routes and stay unaware of the middleware implementation.
 		users := v1.Group("/users")
-		users.Use(middleware.JWTAuthMiddleware(r.tokens))
-		handlers.User.Register(users)
+		users.Use(middleware.JWTAuthMiddleware(r.deps.Tokens))
+
+		users.POST("", r.guard(permission.UsersCreate), r.deps.Handlers.User.Create)
+		users.GET("", r.guard(permission.UsersRead), r.deps.Handlers.User.List)
+		users.GET("/:id", r.guard(permission.UsersRead), r.deps.Handlers.User.Get)
+		users.PUT("/:id", r.guard(permission.UsersUpdate), r.deps.Handlers.User.Update)
+		users.DELETE("/:id", r.guard(permission.UsersDelete), r.deps.Handlers.User.Delete)
 	}
+}
+
+func (r *Router) guard(name string) gin.HandlerFunc {
+	return middleware.RequirePermission(r.deps.Permission, name)
 }
 
 type Handlers struct {

@@ -11,25 +11,25 @@ import (
 
 const dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
 
-type authUseCase struct {
-	userCredentialsFinder port.UserCredentialsFinder
+type authenticationUseCase struct {
+	userCredentialsFinder port.AuthenticationRepository
 	hasher                port.PasswordHasher
 	tokens                port.TokenIssuer
 }
 
-func NewAuthUseCase(
-	userCredentialsFinder port.UserCredentialsFinder,
+func NewAuthenticationUseCase(
+	userCredentialsFinder port.AuthenticationRepository,
 	hasher port.PasswordHasher,
 	tokens port.TokenIssuer,
-) port.AuthUseCase {
-	return &authUseCase{
+) port.AuthenticationUseCase {
+	return &authenticationUseCase{
 		userCredentialsFinder: userCredentialsFinder,
 		hasher:                hasher,
 		tokens:                tokens,
 	}
 }
 
-func (u *authUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
+func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
 	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
 	if err != nil {
 		if !errors.Is(err, domainerr.ErrUserNotFound) {
