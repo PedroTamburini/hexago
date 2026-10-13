@@ -4,24 +4,25 @@ import (
 	"context"
 	"errors"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
+	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
 const dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
 
 type authenticationUseCase struct {
-	userCredentialsFinder port.AuthenticationRepository
-	hasher                port.PasswordHasher
-	tokens                port.TokenIssuer
+	userCredentialsFinder portout.AuthenticationRepository
+	hasher                portout.PasswordHasher
+	tokens                portout.TokenIssuer
 }
 
 func NewAuthenticationUseCase(
-	userCredentialsFinder port.AuthenticationRepository,
-	hasher port.PasswordHasher,
-	tokens port.TokenIssuer,
-) port.AuthenticationUseCase {
+	userCredentialsFinder portout.AuthenticationRepository,
+	hasher portout.PasswordHasher,
+	tokens portout.TokenIssuer,
+) portin.AuthenticationUseCase {
 	return &authenticationUseCase{
 		userCredentialsFinder: userCredentialsFinder,
 		hasher:                hasher,

@@ -1,16 +1,10 @@
-package port
+package secondary
 
 import (
 	"context"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
 )
-
-// AuthenticationUseCase is the capability exposed to the HTTP layer to
-// authenticate a user.
-type AuthenticationUseCase interface {
-	Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error)
-}
 
 // AuthenticationRepository is a narrow read port dedicated to the authentication
 // flow.

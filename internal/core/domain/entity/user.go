@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
-	"github.com/PedroTamburini/hexago/internal/domain/validator"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/domain/validator"
 )
 
 type User struct {

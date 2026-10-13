@@ -5,12 +5,12 @@ import (
 	"strings"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/gin-gonic/gin"
 )
 
-func JWTAuthMiddleware(tokenValidator port.TokenValidator) gin.HandlerFunc {
+func JWTAuthMiddleware(tokenValidator portout.TokenValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {

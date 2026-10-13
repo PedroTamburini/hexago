@@ -4,14 +4,14 @@ import (
 	"net/http"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/gin-gonic/gin"
 )
 
 // RequirePermission guards a route with the permission checker. It must run
 // after JWTAuthMiddleware, which is responsible for putting the authenticated
 // user ID in the context.
-func RequirePermission(checker port.PermissionChecker, permission string) gin.HandlerFunc {
+func RequirePermission(checker portout.PermissionChecker, permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, ok := getUserID(c)
 		if !ok {

@@ -3,9 +3,10 @@ package usecase
 import (
 	"context"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	"github.com/PedroTamburini/hexago/internal/domain/entity"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
+	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
 const (
@@ -17,11 +18,11 @@ const (
 )
 
 type userUseCase struct {
-	repo   port.UserRepository
-	hasher port.PasswordHasher
+	repo   portout.UserRepository
+	hasher portout.PasswordHasher
 }
 
-func NewUserUseCase(repo port.UserRepository, hasher port.PasswordHasher) port.UserUseCase {
+func NewUserUseCase(repo portout.UserRepository, hasher portout.PasswordHasher) portin.UserUseCase {
 	return &userUseCase{
 		repo:   repo,
 		hasher: hasher,

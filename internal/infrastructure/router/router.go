@@ -3,8 +3,8 @@ package router
 import (
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
-	"github.com/PedroTamburini/hexago/internal/domain/permission"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	"github.com/PedroTamburini/hexago/internal/core/permission"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/gin-gonic/gin"
@@ -14,8 +14,8 @@ import (
 // Keeping it in a single struct avoids a growing list of positional constructor
 // parameters and makes the composition root explicit.
 type Dependencies struct {
-	Tokens     port.TokenValidator
-	Permission port.PermissionChecker
+	Tokens     portout.TokenValidator
+	Permission portout.PermissionChecker
 	Handlers   *Handlers
 }
 

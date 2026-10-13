@@ -17,7 +17,7 @@ import (
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
-	"github.com/PedroTamburini/hexago/internal/application/usecase"
+	"github.com/PedroTamburini/hexago/internal/core/usecase"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/repository"

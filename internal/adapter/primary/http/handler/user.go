@@ -6,17 +6,17 @@ import (
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
+	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	usecase port.UserUseCase
+	usecase portin.UserUseCase
 }
 
-func NewUserHandler(usecase port.UserUseCase) *UserHandler {
+func NewUserHandler(usecase portin.UserUseCase) *UserHandler {
 	return &UserHandler{usecase: usecase}
 }
 

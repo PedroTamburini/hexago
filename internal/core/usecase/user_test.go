@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	"github.com/PedroTamburini/hexago/internal/domain/entity"
+	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
 )
 
 type stubUserRepository struct {

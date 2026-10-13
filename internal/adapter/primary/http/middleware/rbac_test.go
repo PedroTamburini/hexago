@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/gin-gonic/gin"
 )
 
@@ -93,4 +93,4 @@ func TestRequirePermission(t *testing.T) {
 	}
 }
 
-var _ port.PermissionChecker = stubPermissionChecker{}
+var _ portout.PermissionChecker = stubPermissionChecker{}

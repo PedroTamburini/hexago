@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
 )
 
 type stubCredentialsFinder struct {

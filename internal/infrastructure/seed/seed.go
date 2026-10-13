@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
-	"github.com/PedroTamburini/hexago/internal/domain/permission"
+	"github.com/PedroTamburini/hexago/internal/core/permission"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"

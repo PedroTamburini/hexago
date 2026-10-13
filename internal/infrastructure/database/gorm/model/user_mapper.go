@@ -1,6 +1,6 @@
 package model
 
-import "github.com/PedroTamburini/hexago/internal/domain/entity"
+import "github.com/PedroTamburini/hexago/internal/core/domain/entity"
 
 func (u *UserModel) ToDomain() *entity.User {
 	if u == nil {

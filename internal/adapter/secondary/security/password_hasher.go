@@ -3,14 +3,14 @@ package security
 import (
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/PedroTamburini/hexago/internal/domain/port"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
 type passwordHasher struct {
 	cost int
 }
 
-func NewPasswordHasher(cost int) port.PasswordHasher {
+func NewPasswordHasher(cost int) portout.PasswordHasher {
 	if cost == 0 {
 		cost = bcrypt.DefaultCost
 	}

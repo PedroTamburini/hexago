@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/PedroTamburini/hexago/internal/domain/dto"
-	domainerr "github.com/PedroTamburini/hexago/internal/domain/error"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/dto"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
 	"gorm.io/gorm"
 )
