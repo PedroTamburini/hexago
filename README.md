@@ -2,6 +2,78 @@
 
 Go backend template using Hexagonal Architecture, DDD principles, JWT authentication, PostgreSQL, and Docker.
 
+## Running with Docker
+
+The stack (PostgreSQL, Redis and the API) is split across three compose files:
+
+| File | Purpose |
+| --- | --- |
+| `docker-compose.yml` | Base definition, shared by every environment. Publishes **no** host ports. |
+| `docker-compose.override.yml` | Development. Loaded automatically by `docker compose up`; publishes ports on `127.0.0.1` and reads `.env`. |
+| `docker-compose.prod.yml` | Production. Loaded explicitly; reads `.env.prod` and sets `ENVIRONMENT=production`. |
+
+### Development
+
+```sh
+cp .env.example .env    # then edit the secrets (JWT_SECRET, DB_PASSWORD, ...)
+docker compose up --build
+```
+
+The API listens on `http://localhost:8080` and Swagger UI is available at
+`/swagger/index.html`. Postgres and Redis are published on the host loopback as
+`5433` and `6380` (high ports, to avoid clashing with locally installed
+instances) and are only reachable from `127.0.0.1`, so they can be inspected
+with `psql`, DBeaver or `redis-cli`:
+
+```sh
+psql -h localhost -p 5433 -U postgres -d hexago
+redis-cli -p 6380 -a "$REDIS_PASSWORD" --no-auth-warning   # password from .env
+```
+
+On startup the API waits for both dependencies to report healthy, runs the
+migrations (`DB_AUTO_MIGRATION=true`) and seeds the admin user
+(`SEED_ENABLED=true`). Tear everything down — including the database volume —
+with:
+
+```sh
+docker compose down -v
+```
+
+### Production
+
+```sh
+cp .env.prod.example .env.prod   # then replace every CHANGE_ME
+docker compose --env-file .env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+`--env-file` is required for interpolation (the Redis password), while the `api`
+service reads its own variables through `env_file: .env.prod`. Nothing is
+published to the host: put the API behind a reverse proxy or load balancer on
+the same network. `.env.prod.example` already ships production defaults
+(`DB_SSLMODE=require`, `DB_AUTO_MIGRATION=false`, `SEED_ENABLED=false`).
+
+To use managed services instead of the bundled containers, override `DB_HOST`,
+`DB_PORT` and `REDIS_ADDR` in `docker-compose.prod.yml` (a commented example is
+included) and comment out the `postgres`/`redis` services in
+`docker-compose.yml`.
+
+## Rate limiting
+
+Requests are limited with a token bucket stored in Redis (atomic Lua script).
+Two buckets are configured:
+
+* **`/api/v1/auth`** — keyed by client IP, with a strict budget to slow down
+  credential stuffing and brute force attempts.
+* **Authenticated routes** — keyed by the user ID taken from the JWT.
+
+Exceeded requests receive `429 Too Many Requests` with `X-RateLimit-Limit`,
+`X-RateLimit-Remaining` and `Retry-After`. If Redis is unreachable the limiter
+**fails closed** and returns `503` rather than letting requests through
+unprotected. The behaviour is controlled by the `REDIS_*` and `RATE_LIMIT_*`
+variables documented in `.env.example`; set `RATE_LIMIT_ENABLED=false` to turn it
+off (no Redis connection is then required).
+
 ## Documentation
 
 * [Swagger / OpenAPI](docs/swagger.json) — generated API specification.

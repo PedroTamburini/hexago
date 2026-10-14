@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env*
+
+*.md
+LICENSE
+
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+**/*_test.go
+coverage.*

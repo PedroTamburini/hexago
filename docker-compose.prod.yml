@@ -1,0 +1,28 @@
+# Production override.
+#
+# Usage:
+#   cp .env.prod.example .env.prod      # then fill in the real secrets
+#   docker compose --env-file .env.prod \
+#     -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# It publishes no host ports on purpose: the API is meant to sit behind a
+# reverse proxy / load balancer on the same network.
+services:
+  api:
+    env_file: .env.prod
+    environment:
+      ENVIRONMENT: production
+    restart: unless-stopped
+    # To use managed services (RDS / ElastiCache) instead of the bundled
+    # containers, replace the connection targets. Compose merges maps key by
+    # key, so only the keys listed here are overridden:
+    #
+    # environment:
+    #   ENVIRONMENT: production
+    #   DB_HOST: ${DB_HOST}
+    #   DB_PORT: ${DB_PORT}
+    #   REDIS_ADDR: ${REDIS_ADDR}
+    #
+    # The bundled postgres/redis services cannot be removed by an override. If
+    # you are not self-hosting them, comment them out in docker-compose.yml or
+    # keep them stopped and only point the API at the managed endpoints.

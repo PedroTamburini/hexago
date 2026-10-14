@@ -1,0 +1,18 @@
+# Development override — loaded automatically by `docker compose up`.
+#
+# It publishes the services on the host loopback only (127.0.0.1) so they can be
+# inspected locally without being reachable from the network, and reads the
+# application secrets from .env.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6380:6379"
+
+  api:
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:8080"

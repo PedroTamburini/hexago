@@ -1,0 +1,61 @@
+# Base compose file — shared by every environment and safe by default: it
+# publishes no host ports.
+#
+#   Development: `docker compose up` also loads docker-compose.override.yml,
+#                which publishes ports on 127.0.0.1 and reads .env.
+#   Production:  `docker compose --env-file .env.prod \
+#                  -f docker-compose.yml -f docker-compose.prod.yml up -d`
+#                (see docker-compose.prod.yml).
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hexago
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hexago"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # The password comes from the environment file so it can differ per
+    # environment. The `$$` escapes the compose interpolation and lets the
+    # container shell read the variable, keeping the secret out of the resolved
+    # config. When the variable is empty Redis simply starts without auth.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: ["sh", "-c", "exec redis-server --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      # Defaults for the all-in-compose topology; overrides can point elsewhere
+      # (e.g. managed services) by replacing these keys.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
