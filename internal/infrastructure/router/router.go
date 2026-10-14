@@ -17,6 +17,18 @@ type Dependencies struct {
 	Tokens     portout.TokenValidator
 	Permission portout.PermissionChecker
 	Handlers   *Handlers
+	// RateLimit carries the per-scope limiters. A nil field disables that scope
+	// (the middleware becomes a pass-through), so the route tree can install it
+	// unconditionally.
+	RateLimit RateLimiters
+}
+
+// RateLimiters groups the limiter instances used by the route tree. Auth is keyed
+// by client IP (login is unauthenticated) while User is keyed by the
+// authenticated user ID.
+type RateLimiters struct {
+	Auth portout.RateLimiter
+	User portout.RateLimiter
 }
 
 type Router struct {
@@ -52,12 +64,22 @@ func New(logger *logger.Logger, cfg *config.Config, deps Dependencies) *Router {
 }
 
 func (r *Router) RegisterRoutes() {
+	r.engine.GET("/health", handler.Health)
+
 	v1 := r.engine.Group("/api/v1")
 	{
-		v1.POST("/auth", r.deps.Handlers.Auth.Authenticate)
+		v1.POST("/auth",
+			middleware.RateLimit(r.deps.RateLimit.Auth, middleware.KeyByIP),
+			r.deps.Handlers.Auth.Authenticate,
+		)
 
 		users := v1.Group("/users")
-		users.Use(middleware.JWTAuthMiddleware(r.deps.Tokens))
+		users.Use(
+			middleware.JWTAuthMiddleware(r.deps.Tokens),
+			// Rate limiting must run after JWTAuthMiddleware so the bucket can be
+			// keyed on the authenticated user instead of the shared client IP.
+			middleware.RateLimit(r.deps.RateLimit.User, middleware.KeyByUserID),
+		)
 
 		users.POST("", r.guard(permission.UsersCreate), r.deps.Handlers.User.Create)
 		users.GET("", r.guard(permission.UsersRead), r.deps.Handlers.User.List)

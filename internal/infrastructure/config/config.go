@@ -43,6 +43,15 @@ type Config struct {
 	AdminUsername         string
 	AdminEmail            string
 	AdminPassword         string
+	RedisAddr             string
+	RedisPassword         string
+	RedisDB               int
+	RedisPoolSize         int
+	RateLimitEnabled      bool
+	RateLimitAuthCapacity int
+	RateLimitAuthRefill   float64
+	RateLimitUserCapacity int
+	RateLimitUserRefill   float64
 }
 
 func (c *Config) IsProduction() bool {
@@ -79,6 +88,15 @@ func LoadConfig() (*Config, error) {
 		AdminUsername:         env("ADMIN_USERNAME", "admin.local"),
 		AdminEmail:            env("ADMIN_EMAIL", "admin@hexago.local"),
 		AdminPassword:         env("ADMIN_PASSWORD", ""),
+		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:         env("REDIS_PASSWORD", ""),
+		RedisDB:               envParse("REDIS_DB", 0, strconv.Atoi),
+		RedisPoolSize:         envParse("REDIS_POOL_SIZE", 10, strconv.Atoi),
+		RateLimitEnabled:      envParse("RATE_LIMIT_ENABLED", true, strconv.ParseBool),
+		RateLimitAuthCapacity: envParse("RATE_LIMIT_AUTH_CAPACITY", 10, strconv.Atoi),
+		RateLimitAuthRefill:   envParse("RATE_LIMIT_AUTH_REFILL_RATE", 0.2, parseFloat),
+		RateLimitUserCapacity: envParse("RATE_LIMIT_USER_CAPACITY", 60, strconv.Atoi),
+		RateLimitUserRefill:   envParse("RATE_LIMIT_USER_REFILL_RATE", 1.0, parseFloat),
 	}
 
 	if len(cfg.JWTSecret) < 32 || cfg.DBPassword == "" {
@@ -89,7 +107,39 @@ func LoadConfig() (*Config, error) {
 		return nil, errors.New("SEED_ENABLED requires ADMIN_PASSWORD to be set")
 	}
 
+	if err := cfg.validateRateLimit(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// validateRateLimit rejects a misconfigured limiter at boot instead of letting it
+// fail on the first request. Capacity and refill must both be positive: a zero
+// refill would drain the bucket forever, and a zero capacity would reject every
+// request.
+func (c *Config) validateRateLimit() error {
+	if !c.RateLimitEnabled {
+		return nil
+	}
+
+	if c.RateLimitAuthCapacity <= 0 || c.RateLimitAuthRefill <= 0 {
+		return errors.New("RATE_LIMIT_AUTH_CAPACITY and RATE_LIMIT_AUTH_REFILL_RATE must be positive")
+	}
+
+	if c.RateLimitUserCapacity <= 0 || c.RateLimitUserRefill <= 0 {
+		return errors.New("RATE_LIMIT_USER_CAPACITY and RATE_LIMIT_USER_REFILL_RATE must be positive")
+	}
+
+	if c.RedisAddr == "" {
+		return errors.New("REDIS_ADDR is required when rate limiting is enabled")
+	}
+
+	return nil
+}
+
+func parseFloat(value string) (float64, error) {
+	return strconv.ParseFloat(value, 64)
 }
 
 func env(key, fallback string) string {
