@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/gin-gonic/gin"
 )
@@ -58,6 +59,20 @@ func TestRequirePermission(t *testing.T) {
 			checker:    stubPermissionChecker{err: errors.New("database unavailable")},
 			wantStatus: http.StatusInternalServerError,
 		},
+		{
+			name:       "user no longer exists is unauthenticated",
+			hasUserID:  true,
+			userID:     1,
+			checker:    stubPermissionChecker{err: domainerr.ErrUserNotFound},
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "deactivated user is unauthenticated",
+			hasUserID:  true,
+			userID:     1,
+			checker:    stubPermissionChecker{err: domainerr.ErrUserInactive},
+			wantStatus: http.StatusUnauthorized,
+		},
 	}
 
 	for _, tt := range tests {
@@ -84,6 +99,12 @@ func TestRequirePermission(t *testing.T) {
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			if tt.wantStatus == http.StatusUnauthorized {
+				if got := rec.Header().Get("WWW-Authenticate"); got != "Bearer" {
+					t.Fatalf("WWW-Authenticate = %q, want Bearer", got)
+				}
 			}
 
 			if called != tt.wantCalled {
