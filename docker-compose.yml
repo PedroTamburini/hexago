@@ -11,7 +11,11 @@ services:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # The password is taken from the environment (the same DB_PASSWORD the API
+      # uses) instead of being hardcoded. Compose reads it from .env in
+      # development and from --env-file .env.prod in production; the `:?` makes
+      # compose fail fast when it is missing.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: hexago
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -27,9 +31,14 @@ services:
     # environment. The `$$` escapes the compose interpolation and lets the
     # container shell read the variable, keeping the secret out of the resolved
     # config. When the variable is empty Redis simply starts without auth.
+    #
+    # AOF is enabled so rate limit buckets survive a restart instead of letting
+    # an attacker reset the window by forcing a bounce.
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-    command: ["sh", "-c", "exec redis-server --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 5s
@@ -59,3 +68,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
