@@ -32,8 +32,11 @@ redis-cli -p 6380 -a "$REDIS_PASSWORD" --no-auth-warning   # password from .env
 
 On startup the API waits for both dependencies to report healthy, runs the
 migrations (`DB_AUTO_MIGRATION=true`) and seeds the admin user
-(`SEED_ENABLED=true`). Tear everything down — including the database volume —
-with:
+(`SEED_ENABLED=true`). The bundled PostgreSQL container uses the same
+`DB_PASSWORD` as the API (see `docker-compose.yml`), so one secret authenticates
+both. If you are reusing a `postgres_data` volume created before this change,
+recreate it with `docker compose down -v` so the container picks up the new
+password. Tear everything down — including the database volume — with:
 
 ```sh
 docker compose down -v
@@ -73,6 +76,21 @@ Exceeded requests receive `429 Too Many Requests` with `X-RateLimit-Limit`,
 unprotected. The behaviour is controlled by the `REDIS_*` and `RATE_LIMIT_*`
 variables documented in `.env.example`; set `RATE_LIMIT_ENABLED=false` to turn it
 off (no Redis connection is then required).
+
+Redis runs with AOF persistence enabled (`--appendonly yes`, see
+`docker-compose.yml`), so the token buckets survive a restart instead of letting
+an attacker reset the window by forcing a bounce.
+
+## Request limits and client IP
+
+* **Body size** — request bodies larger than `SERVER_MAX_BODY_BYTES` (default
+  `2097152`, i.e. 2 MiB) are rejected with `413 Request Entity Too Large`. This
+  bounds memory usage regardless of what a client sends.
+* **Trusted proxies** — the client IP used for rate limiting comes from the
+  connection (`RemoteAddr`) by default, and `X-Forwarded-For`/`X-Real-IP` are
+  ignored. When the API runs behind a reverse proxy or load balancer, set
+  `TRUSTED_PROXIES` to that proxy's IPs/CIDRs (comma-separated) so the forwarded
+  client IP is honoured without letting arbitrary clients spoof it.
 
 ## Documentation
 
