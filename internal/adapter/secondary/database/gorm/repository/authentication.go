@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/model"
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
-	"github.com/PedroTamburini/hexago/internal/core/dto"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"gorm.io/gorm"
 )
 
@@ -18,7 +18,7 @@ func NewAuthenticationRepository(db *gorm.DB) *AuthenticationRepository {
 	return &AuthenticationRepository{db: db}
 }
 
-func (r *AuthenticationRepository) FindCredentialsByUsername(ctx context.Context, username string) (*dto.UserCredentials, error) {
+func (r *AuthenticationRepository) FindCredentialsByUsername(ctx context.Context, username string) (*portout.Credentials, error) {
 	var userModel model.UserModel
 
 	err := r.db.WithContext(ctx).
@@ -32,7 +32,7 @@ func (r *AuthenticationRepository) FindCredentialsByUsername(ctx context.Context
 		return nil, err
 	}
 
-	return &dto.UserCredentials{
+	return &portout.Credentials{
 		ID:           userModel.ID,
 		PasswordHash: userModel.PasswordHash,
 	}, nil

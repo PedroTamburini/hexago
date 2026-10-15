@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
+	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/model"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"gorm.io/gorm"
 )
 
@@ -19,18 +20,26 @@ func NewAuthorizationRepository(db *gorm.DB) *AuthorizationRepository {
 // HasPermission reports whether the user is allowed to perform permission.
 // Administrators (users.is_admin = true) are granted every permission, which
 // makes the flag meaningful instead of being silently ignored.
+//
+// Users that no longer exist, or that were deactivated/deleted, are rejected
+// with domainerr.ErrUserNotFound / domainerr.ErrUserInactive so a revoked token
+// cannot keep exercising its permissions until it expires.
 func (r *AuthorizationRepository) HasPermission(ctx context.Context, userID uint64, permission string) (bool, error) {
 	var user model.UserModel
 
 	err := r.db.WithContext(ctx).
-		Select("is_admin").
+		Select("is_admin", "is_active").
 		Where("id = ?", userID).
 		First(&user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+			return false, domainerr.ErrUserNotFound
 		}
 		return false, err
+	}
+
+	if !user.IsActive {
+		return false, domainerr.ErrUserInactive
 	}
 
 	if user.IsAdmin {

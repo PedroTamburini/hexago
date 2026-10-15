@@ -1,13 +1,14 @@
-package gorm
+package database
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -64,17 +65,24 @@ func resolveGormLogLevel(env config.Environment) gormlogger.LogLevel {
 	return gormlogger.Info
 }
 
+// DatabaseURL builds the libpq DSN from the configuration. It is assembled with
+// net/url instead of fmt.Sprintf so credentials containing reserved characters
+// (e.g. "@", ":", "/", "?") are percent-encoded and the password is not split
+// across the host or the query string.
 func DatabaseURL(cfg *config.Config) string {
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=%s&TimeZone=%s",
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBName,
-		cfg.DBSSLMode,
-		cfg.DBTimeZone,
-	)
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(cfg.DBUser, cfg.DBPassword),
+		Host:   net.JoinHostPort(cfg.DBHost, cfg.DBPort),
+		Path:   "/" + cfg.DBName,
+	}
+
+	query := url.Values{}
+	query.Set("sslmode", cfg.DBSSLMode)
+	query.Set("TimeZone", cfg.DBTimeZone)
+	u.RawQuery = query.Encode()
+
+	return u.String()
 }
 
 func NewPostgresConnection(cfg *config.Config, logger *logger.Logger) (*Database, error) {
@@ -119,31 +127,3 @@ func (d *Database) Close() error {
 
 	return nil
 }
-
-func RunAutoMigrations(db *Database) error {
-	return db.AutoMigrate(
-		&model.UserModel{},
-		&model.RoleModel{},
-		&model.UserRoleModel{},
-		&model.PermissionModel{},
-		&model.RolePermissionModel{},
-	)
-}
-
-// For larger projects with more robust infrastructure, prefer:
-//
-// Migrations created/tested locally (golang-migrate)
-// migrate create \
-//   -ext sql \
-//   -dir internal/infrastructure/database/migrations \
-//   add_..._to_users
-//
-// migrate ... up
-// migrate ... down 1
-// migrate ... up
-//
-// And applied in production via CLI in the GitLab deployment pipeline
-// migrate \
-//   -path ./internal/infrastructure/database/migrations \
-//   -database "$DATABASE_URL" \
-//   up

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/model"
 	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/model"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
