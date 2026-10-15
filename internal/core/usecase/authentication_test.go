@@ -7,16 +7,17 @@ import (
 
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/dto"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
 type stubCredentialsFinder struct {
-	credentials *dto.UserCredentials
+	credentials *portout.Credentials
 	err         error
 	calledWith  string
 	calls       int
 }
 
-func (s *stubCredentialsFinder) FindCredentialsByUsername(_ context.Context, username string) (*dto.UserCredentials, error) {
+func (s *stubCredentialsFinder) FindCredentialsByUsername(_ context.Context, username string) (*portout.Credentials, error) {
 	s.calls++
 	s.calledWith = username
 
@@ -85,7 +86,7 @@ func TestAuthenticationUseCaseRejectsInvalidCredentials(t *testing.T) {
 		},
 		{
 			name:         "wrong password",
-			finder:       &stubCredentialsFinder{credentials: &dto.UserCredentials{ID: 7, PasswordHash: validHash}},
+			finder:       &stubCredentialsFinder{credentials: &portout.Credentials{ID: 7, PasswordHash: validHash}},
 			expectFinder: true,
 			expectComp:   true,
 		},
@@ -144,7 +145,7 @@ func TestAuthenticationUseCaseAuthenticatesActiveUser(t *testing.T) {
 	)
 
 	finder := &stubCredentialsFinder{
-		credentials: &dto.UserCredentials{ID: userID, PasswordHash: validHash},
+		credentials: &portout.Credentials{ID: userID, PasswordHash: validHash},
 	}
 	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
 	jwt := &stubJWTService{}

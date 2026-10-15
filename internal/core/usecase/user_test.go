@@ -31,10 +31,6 @@ func (s *stubUserRepository) Update(context.Context, *entity.User) error { retur
 
 func (s *stubUserRepository) Delete(context.Context, uint64) error { return nil }
 
-func (s *stubUserRepository) FindCredentialsByUsername(context.Context, string) (*dto.UserCredentials, error) {
-	return nil, nil
-}
-
 func TestUserUseCaseFindAllNormalizesPagination(t *testing.T) {
 	testCases := []struct {
 		name       string

@@ -1,10 +1,16 @@
 package secondary
 
-import (
-	"context"
+import "context"
 
-	"github.com/PedroTamburini/hexago/internal/core/dto"
-)
+// Credentials carries the minimum data required to authenticate a user: the
+// user ID and the stored password hash. Keeping the hash in the port (instead
+// of a generic user output DTO) confines it to the authentication flow and
+// prevents it from leaking through a read model that could be serialized or
+// logged by mistake.
+type Credentials struct {
+	ID           uint64
+	PasswordHash string
+}
 
 // AuthenticationRepository is a narrow read port dedicated to the authentication
 // flow.
@@ -16,7 +22,7 @@ import (
 // Implementations must return domainerr.ErrUserNotFound when the username does
 // not exist.
 type AuthenticationRepository interface {
-	FindCredentialsByUsername(ctx context.Context, username string) (*dto.UserCredentials, error)
+	FindCredentialsByUsername(ctx context.Context, username string) (*Credentials, error)
 }
 
 // PasswordHasher hashes and verifies passwords. The hashing algorithm is an

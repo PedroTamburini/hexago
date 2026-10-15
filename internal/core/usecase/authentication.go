@@ -10,12 +10,21 @@ import (
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
-const dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
+const (
+	// dummyPassword is hashed at construction time with the configured hasher so
+	// the "user not found" path performs the same work (and takes the same time)
+	// as a real password comparison, which prevents user enumeration by timing.
+	dummyPassword = "hexago-dummy-password"
+	// dummyPasswordHash is only used if generating the dummy hash fails, which
+	// should not happen with a working hasher.
+	dummyPasswordHash = "$2a$12$r7RUu7gyJNGiGzipY0OFcukSIiaTOhMLqxTJJsaJGD5zLS05U1TIy"
+)
 
 type authenticationUseCase struct {
 	userCredentialsFinder portout.AuthenticationRepository
 	hasher                portout.PasswordHasher
 	tokens                portout.TokenIssuer
+	dummyHash             string
 }
 
 func NewAuthenticationUseCase(
@@ -23,10 +32,17 @@ func NewAuthenticationUseCase(
 	hasher portout.PasswordHasher,
 	tokens portout.TokenIssuer,
 ) portin.AuthenticationUseCase {
+	dummyHash := dummyPasswordHash
+
+	if hash, err := hasher.Hash(dummyPassword); err == nil {
+		dummyHash = hash
+	}
+
 	return &authenticationUseCase{
 		userCredentialsFinder: userCredentialsFinder,
 		hasher:                hasher,
 		tokens:                tokens,
+		dummyHash:             dummyHash,
 	}
 }
 
@@ -38,7 +54,7 @@ func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.Auth
 		}
 
 		// Equalizes response time to prevent user enumeration.
-		_ = u.hasher.Compare(dummyPasswordHash, input.Password)
+		_ = u.hasher.Compare(u.dummyHash, input.Password)
 		return nil, domainerr.ErrInvalidCredentials
 	}
 

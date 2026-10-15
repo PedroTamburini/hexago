@@ -8,6 +8,7 @@ var (
 	ErrInvalidEmail       = errors.New("invalid email")
 	ErrUserAlreadyExists  = errors.New("user already exists")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrUserInactive       = errors.New("user inactive")
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrMissingAuthHeader  = errors.New("missing authorization header")
 	ErrInvalidAuthHeader  = errors.New("invalid authorization header")
