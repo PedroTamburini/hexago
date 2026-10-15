@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -24,6 +26,11 @@ type Config struct {
 	ServerReadTimeOut     time.Duration
 	ServerWriteTimeOut    time.Duration
 	ServerIdleTimeOut     time.Duration
+	ServerMaxBodyBytes    int
+	// TrustedProxies lists the IPs/CIDRs whose forwarding headers
+	// (X-Forwarded-For/X-Real-IP) may be trusted when resolving the client IP.
+	// Empty means "trust no proxy", so c.ClientIP() uses the socket address.
+	TrustedProxies        []string
 	Environment           Environment
 	DBHost                string
 	DBPort                string
@@ -69,6 +76,8 @@ func LoadConfig() (*Config, error) {
 		ServerReadTimeOut:     envParse("SERVER_READ_TIMEOUT", 10*time.Second, time.ParseDuration),
 		ServerWriteTimeOut:    envParse("SERVER_WRITE_TIMEOUT", 10*time.Second, time.ParseDuration),
 		ServerIdleTimeOut:     envParse("SERVER_IDLE_TIMEOUT", 60*time.Second, time.ParseDuration),
+		ServerMaxBodyBytes:    envParse("SERVER_MAX_BODY_BYTES", 2<<20, strconv.Atoi),
+		TrustedProxies:        envList("TRUSTED_PROXIES"),
 		Environment:           envParse("ENVIRONMENT", EnvironmentDevelopment, validEnvironment),
 		DBHost:                env("DB_HOST", "localhost"),
 		DBPort:                env("DB_PORT", "5432"),
@@ -111,7 +120,37 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
+	if err := cfg.validateServer(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
+}
+
+// validateServer rejects invalid transport/bootstrap settings at boot instead of
+// letting them surface on the first request.
+func (c *Config) validateServer() error {
+	if c.ServerMaxBodyBytes <= 0 {
+		return errors.New("SERVER_MAX_BODY_BYTES must be positive")
+	}
+
+	return c.validateTrustedProxies()
+}
+
+// validateTrustedProxies ensures every entry is a parseable IP or CIDR. gin
+// accepts bare IPs (treated as /32 or /128) in addition to CIDR blocks.
+func (c *Config) validateTrustedProxies() error {
+	for _, proxy := range c.TrustedProxies {
+		if net.ParseIP(proxy) != nil {
+			continue
+		}
+
+		if _, _, err := net.ParseCIDR(proxy); err != nil {
+			return fmt.Errorf("TRUSTED_PROXIES entry %q is not a valid IP or CIDR", proxy)
+		}
+	}
+
+	return nil
 }
 
 // validateRateLimit rejects a misconfigured limiter at boot instead of letting it
@@ -148,6 +187,25 @@ func env(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// envList parses a comma-separated environment variable into a slice, trimming
+// whitespace and dropping empty entries. An unset or blank value yields nil.
+func envList(key string) []string {
+	value := os.Getenv(key)
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+
+	return items
 }
 
 func envParse[T any](key string, fallback T, parse func(string) (T, error)) T {
