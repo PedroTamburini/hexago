@@ -213,7 +213,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.FindUserByIDResponse"
+                            "$ref": "#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.UserResponse"
                         }
                     },
                     "400": {
@@ -480,35 +480,6 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.UserResponse"
                     }
-                }
-            }
-        },
-        "github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.FindUserByIDResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "email": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "is_active": {
-                    "type": "boolean"
-                },
-                "is_admin": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
                 }
             }
         },

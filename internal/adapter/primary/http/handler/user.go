@@ -103,7 +103,7 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"
-// @Success      200  {object}  response.FindUserByIDResponse
+// @Success      200  {object}  response.UserResponse
 // @Failure      400  {object}  response.ErrorResponse
 // @Failure      401  {object}  response.ErrorResponse
 // @Failure      404  {object}  response.ErrorResponse
@@ -137,7 +137,7 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 		return
 	}
 
-	resp := response.FindUserByIDResponse{
+	resp := response.UserResponse{
 		ID:        output.ID,
 		Name:      output.Name,
 		Username:  output.Username,
