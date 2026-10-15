@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,7 +11,30 @@ import (
 
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
+	"github.com/gin-gonic/gin"
 )
+
+// NewEngine builds the bare gin engine: framework mode and trusted proxy
+// handling. It deliberately installs no routes or middleware, so the HTTP
+// adapter (not the infrastructure layer) owns request handling concerns.
+//
+// TrustedProxies is passed straight through to gin: an empty list means "trust
+// no proxy", so c.ClientIP() falls back to the socket address and
+// X-Forwarded-For is ignored. That is the safe default when the API is exposed
+// directly; set TRUSTED_PROXIES only when running behind a known reverse proxy.
+func NewEngine(cfg *config.Config) (*gin.Engine, error) {
+	if cfg.IsProduction() {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	engine := gin.New()
+
+	if err := engine.SetTrustedProxies(cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
+	}
+
+	return engine, nil
+}
 
 type Server struct {
 	http   *http.Server

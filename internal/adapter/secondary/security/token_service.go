@@ -6,7 +6,6 @@ import (
 	"time"
 
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -16,10 +15,10 @@ type jwtService struct {
 	expiration time.Duration
 }
 
-func NewJWTService(cfg *config.Config) portout.TokenService {
+func NewJWTService(secret string, expiration time.Duration) portout.TokenService {
 	return &jwtService{
-		secretKey:  []byte(cfg.JWTSecret),
-		expiration: cfg.JWTExpiration,
+		secretKey:  []byte(secret),
+		expiration: expiration,
 	}
 }
 

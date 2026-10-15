@@ -6,17 +6,17 @@ import (
 	"time"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-func Logger(log *logger.Logger) gin.HandlerFunc {
+// Logger records one structured line per request.
+func Logger(log *slog.Logger) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		start := time.Now()
 		path := ctx.Request.URL.Path
 		query := ctx.Request.URL.RawQuery
-		requestID := ctx.GetString("request_id")
+		requestID := getRequestID(ctx)
 
 		ctx.Next()
 
@@ -33,10 +33,8 @@ func Logger(log *logger.Logger) gin.HandlerFunc {
 			"body_size", ctx.Writer.Size(),
 		)
 
-		if len(ctx.Errors) > 0 {
-			for _, err := range ctx.Errors {
-				log.Error("request error", slog.String("error", err.Error()))
-			}
+		for _, err := range ctx.Errors {
+			log.ErrorContext(ctx.Request.Context(), "request error", slog.String("error", err.Error()))
 		}
 	}
 }
@@ -45,7 +43,7 @@ func CORS() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Header("Access-Control-Allow-Origin", "*")
 		ctx.Header("Access-Control-Allow-Credentials", "false") // Modify as needed and when specifying Allowed-Origins
-		ctx.Header("Access-Control-Allow-Headers", "Authorization, Accept, Content-Type, Origin, X-CSRF-Token, X-Requested-With")
+		ctx.Header("Access-Control-Allow-Headers", "Authorization, Accept, Content-Type, Origin, X-Requested-With")
 		ctx.Header("Access-Control-Allow-Methods", "DELETE, GET, OPTIONS, POST, PUT")
 
 		if ctx.Request.Method == http.MethodOptions {
@@ -62,20 +60,22 @@ func RequestID() gin.HandlerFunc {
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
-		ctx.Set("request_id", requestID)
+		setRequestID(ctx, requestID)
 		ctx.Header("X-Request-ID", requestID)
 		ctx.Next()
 	}
 }
 
-func Recovery(logger *logger.Logger) gin.HandlerFunc {
+// Recovery converts a panic into a 500 response and logs it, accepting a plain
+// *slog.Logger to keep the adapter free of infrastructure imports.
+func Recovery(log *slog.Logger) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				logger.ErrorContext(ctx.Request.Context(),
+				log.ErrorContext(ctx.Request.Context(),
 					"panic recovered",
 					"error", err,
-					"request_id", ctx.GetString("request_id"),
+					"request_id", getRequestID(ctx),
 				)
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, response.ErrorResponse{Error: "internal server error"})
 			}

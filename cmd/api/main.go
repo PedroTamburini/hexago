@@ -16,16 +16,17 @@ import (
 	"os"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/routes"
+	gormdb "github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm"
+	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/repository"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/ratelimit"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/PedroTamburini/hexago/internal/core/usecase"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/database/gorm/repository"
+	"github.com/PedroTamburini/hexago/internal/infrastructure/database"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/logger"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/redis"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/router"
-	"github.com/PedroTamburini/hexago/internal/infrastructure/seed"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/server"
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -47,24 +48,33 @@ func run() error {
 
 	log := logger.NewLogger(cfg)
 
-	database, err := gorm.NewPostgresConnection(cfg, log)
+	db, err := database.NewPostgresConnection(cfg, log)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := database.Close(); err != nil {
+		if err := db.Close(); err != nil {
 			log.Error("failed to close database", "error", err)
 		}
 	}()
 
+	// Supporting adapters. They are built once and shared so the seed and the
+	// use cases go through the same hashing and token implementations.
+	hasher := security.NewPasswordHasher(cfg.HasherCost)
+	tokens := security.NewJWTService(cfg.JWTSecret, cfg.JWTExpiration)
+
 	if cfg.DBAutoMigration {
-		if err := gorm.RunAutoMigrations(database); err != nil {
+		if err := gormdb.RunAutoMigrations(db.DB); err != nil {
 			return err
 		}
 	}
 
 	if cfg.SeedEnabled {
-		if err := seed.RunSeed(database, cfg); err != nil {
+		if err := gormdb.RunSeed(db.DB, gormdb.SeedOptions{
+			AdminUsername: cfg.AdminUsername,
+			AdminEmail:    cfg.AdminEmail,
+			AdminPassword: cfg.AdminPassword,
+		}, hasher); err != nil {
 			return err
 		}
 	}
@@ -81,14 +91,21 @@ func run() error {
 		}()
 	}
 
-	rt := router.New(log, cfg, wire(cfg, database, redisClient))
-	rt.RegisterRoutes()
+	engine, err := server.NewEngine(cfg)
+	if err != nil {
+		return err
+	}
 
-	return server.New(cfg, log, rt.Engine()).Start()
+	routes.Register(engine, log.Logger, routes.Options{
+		DocsEnabled:  !cfg.IsProduction(),
+		MaxBodyBytes: cfg.ServerMaxBodyBytes,
+	}, wire(cfg, db, redisClient, hasher, tokens))
+
+	return server.New(cfg, log, engine).Start()
 }
 
 // newRedisClient connects to Redis only when rate limiting is enabled. Returning
-// a nil client is a valid, intentional state: the router then omits the rate
+// a nil client is a valid, intentional state: the route tree then omits the rate
 // limit middleware altogether.
 func newRedisClient(cfg *config.Config, log *logger.Logger) (*goredis.Client, error) {
 	if !cfg.RateLimitEnabled {
@@ -100,28 +117,30 @@ func newRedisClient(cfg *config.Config, log *logger.Logger) (*goredis.Client, er
 
 // wire is the composition root: it builds the adapters, use cases, authorization
 // checker and handlers in one place, so nothing has to be assembled piecemeal in
-// run(). It returns exactly what the router needs.
-func wire(cfg *config.Config, db *gorm.Database, redisClient *goredis.Client) router.Dependencies {
+// run(). It returns exactly what the route tree needs.
+func wire(
+	cfg *config.Config,
+	db *database.Database,
+	redisClient *goredis.Client,
+	hasher portout.PasswordHasher,
+	tokens portout.TokenService,
+) routes.Dependencies {
 	// Repositories (secondary adapters)
 	userRepository := repository.NewUserRepository(db.DB)
 	authenticationRepository := repository.NewAuthenticationRepository(db.DB)
 	permissionChecker := repository.NewAuthorizationRepository(db.DB)
-
-	// Supporting adapters
-	hasher := security.NewPasswordHasher(cfg.HasherCost)
-	tokens := security.NewJWTService(cfg)
 
 	// Use cases
 	userUseCase := usecase.NewUserUseCase(userRepository, hasher)
 	authenticationUseCase := usecase.NewAuthenticationUseCase(authenticationRepository, hasher, tokens)
 
 	// Primary adapters (handlers)
-	handlers := &router.Handlers{
+	handlers := &routes.Handlers{
 		User: handler.NewUserHandler(userUseCase),
 		Auth: handler.NewAuthHandler(authenticationUseCase),
 	}
 
-	return router.Dependencies{
+	return routes.Dependencies{
 		Tokens:     tokens,
 		Permission: permissionChecker,
 		Handlers:   handlers,
@@ -133,8 +152,8 @@ func wire(cfg *config.Config, db *gorm.Database, redisClient *goredis.Client) ro
 // the unauthenticated login route and a more generous one for authenticated
 // users. When rate limiting is disabled the returned limiters are nil, which the
 // middleware reads as "pass-through".
-func newRateLimiters(cfg *config.Config, redisClient *goredis.Client) router.RateLimiters {
-	limiters := router.RateLimiters{}
+func newRateLimiters(cfg *config.Config, redisClient *goredis.Client) routes.RateLimiters {
+	limiters := routes.RateLimiters{}
 	if redisClient == nil {
 		return limiters
 	}

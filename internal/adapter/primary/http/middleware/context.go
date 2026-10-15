@@ -4,11 +4,14 @@ import "github.com/gin-gonic/gin"
 
 // contextKey is an unexported type used for keys stored in the gin context.
 // Using a dedicated type instead of a bare string makes collisions impossible
-// and lets setUserID/getUserID be the single source of truth, which prevents the
-// "userID" vs "user_id" mismatch that silently broke authorization.
+// and lets the setter/getter pairs be the single source of truth, which prevents
+// the "userID" vs "user_id" mismatch that silently broke authorization.
 type contextKey string
 
-const userIDKey contextKey = "user_id"
+const (
+	userIDKey    contextKey = "user_id"
+	requestIDKey contextKey = "request_id"
+)
 
 func setUserID(c *gin.Context, userID uint64) {
 	c.Set(string(userIDKey), userID)
@@ -22,4 +25,22 @@ func getUserID(c *gin.Context) (uint64, bool) {
 
 	userID, ok := value.(uint64)
 	return userID, ok
+}
+
+func setRequestID(c *gin.Context, requestID string) {
+	c.Set(string(requestIDKey), requestID)
+}
+
+func getRequestID(c *gin.Context) string {
+	value, exists := c.Get(string(requestIDKey))
+	if !exists {
+		return ""
+	}
+
+	requestID, ok := value.(string)
+	if !ok {
+		return ""
+	}
+
+	return requestID
 }
