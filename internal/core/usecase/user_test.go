@@ -2,9 +2,12 @@ package usecase
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/dto"
 )
 
@@ -138,5 +141,33 @@ func TestUserUseCaseFindAllMapsUsers(t *testing.T) {
 
 	if output.Users[1].Username != "jane.doe" || output.Users[1].IsActive {
 		t.Fatalf("unexpected second user mapping: %+v", output.Users[1])
+	}
+}
+
+func TestUserUseCaseCreateRejectsPasswordAboveBcryptLimit(t *testing.T) {
+	// 73 ascii bytes pass the rune based binding tag but exceed the 72 byte
+	// limit enforced by bcrypt, which used to surface as a 500.
+	hasher := &stubPasswordHasher{}
+	repo := &stubUserRepository{}
+
+	uc := NewUserUseCase(repo, hasher)
+
+	output, err := uc.Create(context.Background(), dto.CreateUserInput{
+		Name:     "John Doe",
+		Username: "john.doe",
+		Email:    "john@example.com",
+		Password: strings.Repeat("a", 73),
+	})
+
+	if !errors.Is(err, domainerr.ErrInvalidPassword) {
+		t.Fatalf("expected invalid password, got %v", err)
+	}
+
+	if output != nil {
+		t.Fatalf("expected no output, got %+v", output)
+	}
+
+	if hasher.hashes != 0 {
+		t.Fatalf("expected the hasher not to be called, got %d calls", hasher.hashes)
 	}
 }

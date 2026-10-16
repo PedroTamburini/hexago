@@ -4,7 +4,7 @@ type CreateUserBodyRequest struct {
 	Name     string `json:"name" binding:"required,max=100"`
 	Username string `json:"username" binding:"required,max=60"`
 	Email    string `json:"email" binding:"required,max=254"`
-	Password string `json:"password" binding:"required,min=8,max=64"`
+	Password string `json:"password" binding:"required,min=8,max=72"`
 }
 
 type FindUserByIDUriRequest struct {

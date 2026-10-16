@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
+	"github.com/PedroTamburini/hexago/internal/core/domain/validator"
 	"github.com/PedroTamburini/hexago/internal/core/dto"
 	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
@@ -47,6 +48,13 @@ func NewAuthenticationUseCase(
 }
 
 func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
+	// Validated before touching the repository: a malformed password can never
+	// match any account, and rejecting it here keeps the finder (and therefore
+	// the database) out of the loop.
+	if !validator.IsValidPassword(input.Password) {
+		return nil, domainerr.ErrInvalidPassword
+	}
+
 	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
 	if err != nil {
 		if !errors.Is(err, domainerr.ErrUserNotFound) {

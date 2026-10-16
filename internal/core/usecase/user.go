@@ -3,7 +3,9 @@ package usecase
 import (
 	"context"
 
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
+	"github.com/PedroTamburini/hexago/internal/core/domain/validator"
 	"github.com/PedroTamburini/hexago/internal/core/dto"
 	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
@@ -30,6 +32,10 @@ func NewUserUseCase(repo portout.UserRepository, hasher portout.PasswordHasher) 
 }
 
 func (uc *userUseCase) Create(ctx context.Context, input dto.CreateUserInput) (*dto.CreateUserOutput, error) {
+	if !validator.IsValidPassword(input.Password) {
+		return nil, domainerr.ErrInvalidPassword
+	}
+
 	user, err := entity.NewUser(input.Name, input.Username, input.Email)
 	if err != nil {
 		return nil, err

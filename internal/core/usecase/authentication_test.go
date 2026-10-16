@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
@@ -31,11 +32,14 @@ func (s *stubCredentialsFinder) FindCredentialsByUsername(_ context.Context, use
 type stubPasswordHasher struct {
 	hash          string
 	expectedPlain string
+	hashes        int
 	compares      int
 	comparedHash  string
 }
 
 func (s *stubPasswordHasher) Hash(string) (string, error) {
+	s.hashes++
+
 	return s.hash, nil
 }
 
@@ -174,6 +178,43 @@ func TestAuthenticationUseCaseAuthenticatesActiveUser(t *testing.T) {
 
 	if hasher.comparedHash != validHash {
 		t.Fatalf("expected comparison against the stored hash, got %q", hasher.comparedHash)
+	}
+}
+
+func TestAuthenticationUseCaseRejectsInvalidPasswordFormat(t *testing.T) {
+	// The password is rejected before the repository is queried, so a malformed
+	// (or oversized) password never reaches the database.
+	finder := &stubCredentialsFinder{
+		credentials: &portout.Credentials{ID: 1, PasswordHash: "$2a$12$validhash"},
+	}
+	hasher := &stubPasswordHasher{hash: "$2a$12$validhash", expectedPlain: "correct-password"}
+	jwt := &stubJWTService{}
+
+	uc := NewAuthenticationUseCase(finder, hasher, jwt)
+
+	output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
+		Username: "john.doe",
+		Password: strings.Repeat("a", 73),
+	})
+
+	if !errors.Is(err, domainerr.ErrInvalidPassword) {
+		t.Fatalf("expected invalid password, got %v", err)
+	}
+
+	if output != nil {
+		t.Fatalf("expected no output, got %+v", output)
+	}
+
+	if finder.calls != 0 {
+		t.Fatalf("expected the credentials finder not to be called, got %d calls", finder.calls)
+	}
+
+	if hasher.compares != 0 {
+		t.Fatalf("expected no password comparison, got %d", hasher.compares)
+	}
+
+	if jwt.generations != 0 {
+		t.Fatalf("expected no token to be generated, got %d", jwt.generations)
 	}
 }
 

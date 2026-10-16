@@ -72,6 +72,12 @@ func (h *UserHandler) Create(ctx *gin.Context) {
 			})
 			return
 
+		case errors.Is(err, domainerr.ErrInvalidPassword):
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid password",
+			})
+			return
+
 		case errors.Is(err, domainerr.ErrUserAlreadyExists):
 			ctx.JSON(http.StatusConflict, response.ErrorResponse{
 				Error: "user already exists",
