@@ -92,6 +92,34 @@ an attacker reset the window by forcing a bounce.
   `TRUSTED_PROXIES` to that proxy's IPs/CIDRs (comma-separated) so the forwarded
   client IP is honoured without letting arbitrary clients spoof it.
 
+## Configuration
+
+Settings are read from the environment at startup and the process **fails fast**
+on a malformed value: an unparseable duration, integer, boolean, `ENVIRONMENT`
+or `DB_SSLMODE` aborts the boot with an error naming the variable, instead of
+silently falling back to the default. Unset or empty variables take their
+default, except for the two variables without a safe one: `ENVIRONMENT` and
+`DB_SSLMODE` are always required (a wrong `ENVIRONMENT` would silently expose
+the docs and lower the log level, and a wrong `DB_SSLMODE` would downgrade the
+database connection to plaintext). Every `.env` example ships both.
+
+Credentials are checked with the policy that matches how they are used:
+
+* **Hashable passwords** — every password the API stores (`ADMIN_PASSWORD`)
+  passes through bcrypt, so it needs at least 8 characters and at most 72
+  bytes. When `SEED_ENABLED=true` the admin identity is validated at boot:
+  password, `ADMIN_USERNAME` and `ADMIN_EMAIL`.
+* **Infrastructure credentials** — `DB_PASSWORD` and `REDIS_PASSWORD` are sent
+  to PostgreSQL and Redis, which accept arbitrary lengths, so the 72 byte
+  ceiling does not apply: only a minimum of 8 characters is enforced. An empty
+  `REDIS_PASSWORD` is accepted, because the bundled Redis may run without auth.
+* **Signing key** — `JWT_SECRET` is an HMAC key rather than a password and must
+  be at least 32 characters.
+
+`HASHER_COST` selects the bcrypt cost and must be between 4 and 31; the default
+is 12. Costs below 10 are accepted but logged as a warning, since they weaken
+every stored password.
+
 ## Documentation
 
 * [Swagger / OpenAPI](docs/swagger.json) — generated API specification.
