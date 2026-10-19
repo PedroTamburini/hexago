@@ -49,13 +49,6 @@ func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 
 	output, err := h.usecase.Authenticate(ctx.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, domainerr.ErrInvalidPassword) {
-			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
-				Error: "invalid password",
-			})
-			return
-		}
-
 		if errors.Is(err, domainerr.ErrInvalidCredentials) {
 			ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
 				Error: "invalid credentials",

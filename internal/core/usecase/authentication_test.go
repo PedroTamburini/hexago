@@ -197,8 +197,8 @@ func TestAuthenticationUseCaseRejectsInvalidPasswordFormat(t *testing.T) {
 		Password: strings.Repeat("a", 73),
 	})
 
-	if !errors.Is(err, domainerr.ErrInvalidPassword) {
-		t.Fatalf("expected invalid password, got %v", err)
+	if !errors.Is(err, domainerr.ErrInvalidCredentials) {
+		t.Fatalf("expected invalid credentials, got %v", err)
 	}
 
 	if output != nil {

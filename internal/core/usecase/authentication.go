@@ -52,7 +52,7 @@ func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.Auth
 	// match any account, and rejecting it here keeps the finder (and therefore
 	// the database) out of the loop.
 	if !validator.IsValidPassword(input.Password) {
-		return nil, domainerr.ErrInvalidPassword
+		return nil, domainerr.ErrInvalidCredentials
 	}
 
 	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
