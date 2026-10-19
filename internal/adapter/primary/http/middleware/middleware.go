@@ -54,6 +54,18 @@ func CORS() gin.HandlerFunc {
 	}
 }
 
+// SecurityHeaders sets conservative response headers on every reply. They belong
+// here rather than in the CORS preflight, which only advertises request headers.
+func SecurityHeaders() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		ctx.Header("X-Content-Type-Options", "nosniff")
+		ctx.Header("X-Frame-Options", "DENY")
+		ctx.Header("Referrer-Policy", "no-referrer")
+		ctx.Header("Cache-Control", "no-store")
+		ctx.Next()
+	}
+}
+
 func RequestID() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		requestID := ctx.GetHeader("X-Request-ID")

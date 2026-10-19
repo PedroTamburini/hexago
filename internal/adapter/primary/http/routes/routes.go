@@ -58,6 +58,7 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		middleware.Logger(log),
 		middleware.Recovery(log),
 		middleware.CORS(),
+		middleware.SecurityHeaders(),
 	)
 
 	if opts.DocsEnabled {
