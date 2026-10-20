@@ -79,7 +79,6 @@ func ensureAdminUser(db *gormio.DB, opts SeedOptions, hasher portout.PasswordHas
 		}
 
 		user.SetPasswordHash(passwordHash)
-		user.IsAdmin = true
 
 		admin = *model.FromDomain(user)
 
@@ -100,14 +99,14 @@ func ensureAdminUser(db *gormio.DB, opts SeedOptions, hasher portout.PasswordHas
 }
 
 func ensureAdminRole(db *gormio.DB) (*model.RoleModel, error) {
-	role := &model.RoleModel{Name: "admin"}
+	role := &model.RoleModel{Name: model.AdminRoleName}
 
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(role).Error; err != nil {
 		return nil, fmt.Errorf("failed to create admin role: %w", err)
 	}
 
 	// Retrieve the role ID in case it already existed.
-	if err := db.Where("name = ?", "admin").First(role).Error; err != nil {
+	if err := db.Where("name = ?", model.AdminRoleName).First(role).Error; err != nil {
 		return nil, fmt.Errorf("failed to retrieve admin role: %w", err)
 	}
 

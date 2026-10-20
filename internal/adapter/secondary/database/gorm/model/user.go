@@ -12,7 +12,6 @@ type UserModel struct {
 	Username     string `gorm:"uniqueIndex;not null;size:60"`
 	Email        string `gorm:"uniqueIndex;not null;size:254"`
 	PasswordHash string `gorm:"not null;"`
-	IsAdmin      bool   `gorm:"default:false"`
 	IsActive     bool   `gorm:"default:true"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

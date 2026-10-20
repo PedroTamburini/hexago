@@ -18,8 +18,9 @@ func NewAuthorizationRepository(db *gorm.DB) *AuthorizationRepository {
 }
 
 // HasPermission reports whether the user is allowed to perform permission.
-// Administrators (users.is_admin = true) are granted every permission, which
-// makes the flag meaningful instead of being silently ignored.
+// Administrators are not special cased: the seed links the admin role to every
+// permission, so the regular role lookup below already grants them everything
+// through the RBAC tables.
 //
 // Users that no longer exist, or that were deactivated/deleted, are rejected
 // with domainerr.ErrUserNotFound / domainerr.ErrUserInactive so a revoked token
@@ -28,7 +29,7 @@ func (r *AuthorizationRepository) HasPermission(ctx context.Context, userID uint
 	var user model.UserModel
 
 	err := r.db.WithContext(ctx).
-		Select("is_admin", "is_active").
+		Select("is_active").
 		Where("id = ?", userID).
 		First(&user).Error
 	if err != nil {
@@ -40,10 +41,6 @@ func (r *AuthorizationRepository) HasPermission(ctx context.Context, userID uint
 
 	if !user.IsActive {
 		return false, domainerr.ErrUserInactive
-	}
-
-	if user.IsAdmin {
-		return true, nil
 	}
 
 	var count int64
