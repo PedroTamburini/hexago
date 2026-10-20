@@ -322,7 +322,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes an existing user.",
+                "description": "Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone.",
                 "tags": [
                     "users"
                 ],
@@ -348,6 +348,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse"
                         }
@@ -378,7 +384,7 @@ const docTemplate = `{
             "properties": {
                 "password": {
                     "type": "string",
-                    "maxLength": 64
+                    "maxLength": 72
                 },
                 "username": {
                     "type": "string",
@@ -405,7 +411,7 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string",
-                    "maxLength": 64,
+                    "maxLength": 72,
                     "minLength": 8
                 },
                 "username": {
@@ -516,9 +522,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "is_active": {
-                    "type": "boolean"
-                },
-                "is_admin": {
                     "type": "boolean"
                 },
                 "name": {

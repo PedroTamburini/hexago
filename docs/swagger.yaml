@@ -3,7 +3,7 @@ definitions:
   github_com_PedroTamburini_hexago_internal_adapter_primary_http_request.AuthenticateBodyRequest:
     properties:
       password:
-        maxLength: 64
+        maxLength: 72
         type: string
       username:
         maxLength: 60
@@ -21,7 +21,7 @@ definitions:
         maxLength: 100
         type: string
       password:
-        maxLength: 64
+        maxLength: 72
         minLength: 8
         type: string
       username:
@@ -101,8 +101,6 @@ definitions:
       id:
         type: integer
       is_active:
-        type: boolean
-      is_admin:
         type: boolean
       name:
         type: string
@@ -230,7 +228,8 @@ paths:
       - users
   /users/{id}:
     delete:
-      description: Deletes an existing user.
+      description: Deletes an existing user. An admin cannot delete their own account,
+        and the last active admin cannot be deleted by anyone.
       parameters:
       - description: User ID
         in: path
@@ -246,6 +245,10 @@ paths:
             $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "403":
+          description: Forbidden
           schema:
             $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
         "404":
