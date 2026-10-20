@@ -25,7 +25,6 @@ type FindUserByIDOutput struct {
 	Name      string
 	Username  string
 	Email     string
-	IsAdmin   bool
 	IsActive  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -41,7 +40,6 @@ type UserOutput struct {
 	Name      string
 	Username  string
 	Email     string
-	IsAdmin   bool
 	IsActive  bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -68,4 +66,8 @@ type UpdateUserOutput struct {
 
 type DeleteUserInput struct {
 	ID uint64
+	// ActorID is the authenticated user performing the deletion, so the use
+	// case can enforce the rules that depend on who is asking (for instance,
+	// an admin deleting their own account).
+	ActorID uint64
 }

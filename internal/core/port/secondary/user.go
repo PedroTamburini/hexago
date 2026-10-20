@@ -13,4 +13,6 @@ type UserRepository interface {
 	FindAll(ctx context.Context, limit, offset int) ([]*entity.User, error)
 	Update(ctx context.Context, user *entity.User) error
 	Delete(ctx context.Context, id uint64) error
+	IsAdmin(ctx context.Context, userID uint64) (bool, error)
+	CountActiveAdmins(ctx context.Context) (int64, error)
 }

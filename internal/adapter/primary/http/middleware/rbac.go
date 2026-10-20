@@ -15,7 +15,7 @@ import (
 // user ID in the context.
 func RequirePermission(checker portout.PermissionChecker, permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID, ok := getUserID(c)
+		userID, ok := GetUserID(c)
 		if !ok {
 			abortWithError(c, http.StatusUnauthorized, domainerr.ErrInvalidToken, "unauthorized")
 			return

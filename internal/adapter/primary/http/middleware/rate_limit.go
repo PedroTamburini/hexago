@@ -63,7 +63,7 @@ func KeyByIP(c *gin.Context) string {
 // JWTAuthMiddleware; when no user is present it falls back to the client IP so
 // the request is still bounded.
 func KeyByUserID(c *gin.Context) string {
-	if userID, ok := getUserID(c); ok {
+	if userID, ok := GetUserID(c); ok {
 		return strconv.FormatUint(userID, 10)
 	}
 

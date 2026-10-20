@@ -3,8 +3,8 @@ package usecase
 import (
 	"context"
 
-	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
+	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/domain/validator"
 	"github.com/PedroTamburini/hexago/internal/core/dto"
 	portin "github.com/PedroTamburini/hexago/internal/core/port/primary"
@@ -71,7 +71,6 @@ func (uc *userUseCase) FindByID(ctx context.Context, input dto.FindUserByIDInput
 		Name:      user.Name,
 		Username:  user.Username,
 		Email:     user.Email,
-		IsAdmin:   user.IsAdmin,
 		IsActive:  user.IsActive,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -93,7 +92,6 @@ func (uc *userUseCase) FindAll(ctx context.Context, input dto.FindAllUsersInput)
 			Name:      user.Name,
 			Username:  user.Username,
 			Email:     user.Email,
-			IsAdmin:   user.IsAdmin,
 			IsActive:  user.IsActive,
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
@@ -128,13 +126,39 @@ func (uc *userUseCase) Update(ctx context.Context, input dto.UpdateUserInput) (*
 	}, nil
 }
 
+// Delete removes a user after enforcing the administrator safety rules: an
+// administrator cannot delete their own account, and no one may delete the
+// last active administrator, since that would lock the application out of
+// privileged operations until the database is fixed by hand.
 func (uc *userUseCase) Delete(ctx context.Context, input dto.DeleteUserInput) error {
-	err := uc.repo.Delete(ctx, input.ID)
+	target, err := uc.repo.FindByID(ctx, input.ID)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	isAdmin, err := uc.repo.IsAdmin(ctx, input.ID)
+	if err != nil {
+		return err
+	}
+
+	if isAdmin {
+		if input.ID == input.ActorID {
+			return domainerr.ErrAdminSelfDelete
+		}
+
+		if target.IsActive {
+			activeAdmins, err := uc.repo.CountActiveAdmins(ctx)
+			if err != nil {
+				return err
+			}
+
+			if activeAdmins <= 1 {
+				return domainerr.ErrLastAdmin
+			}
+		}
+	}
+
+	return uc.repo.Delete(ctx, input.ID)
 }
 
 // normalizePagination clamps caller supplied pagination values so the

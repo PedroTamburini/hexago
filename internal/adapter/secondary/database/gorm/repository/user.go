@@ -24,7 +24,6 @@ var userReadColumns = []string{
 	"name",
 	"username",
 	"email",
-	"is_admin",
 	"is_active",
 	"created_at",
 	"updated_at",
@@ -92,6 +91,52 @@ func (r *UserRepository) Delete(ctx context.Context, id uint64) error {
 	}
 
 	return nil
+}
+
+// IsAdmin reports whether the user holds the admin role. Administrator status
+// is derived from the RBAC tables only: the legacy users.is_admin column is
+// never read, so there is a single source of truth for authorization and for
+// the business rules that depend on being an admin. Soft deleted users are
+// excluded so a deleted account can never still be reported as an admin.
+func (r *UserRepository) IsAdmin(ctx context.Context, userID uint64) (bool, error) {
+	var count int64
+
+	err := r.db.WithContext(ctx).
+		Table("user_roles AS ur").
+		Joins("JOIN roles AS rl ON rl.id = ur.role_id").
+		Joins(`JOIN "user" AS u ON u.id = ur.user_id`).
+		Where("ur.user_id = ?", userID).
+		Where("rl.name = ?", model.AdminRoleName).
+		Where("u.deleted_at IS NULL").
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+// CountActiveAdmins returns how many users are active administrators. The
+// delete use case relies on it to refuse removing the last one, which would
+// leave the application with no privileged account until the database is fixed
+// by hand. Deactivated or soft deleted users do not count, because they cannot
+// exercise any permission.
+func (r *UserRepository) CountActiveAdmins(ctx context.Context) (int64, error) {
+	var count int64
+
+	err := r.db.WithContext(ctx).
+		Table(`"user" AS u`).
+		Joins("JOIN user_roles AS ur ON ur.user_id = u.id").
+		Joins("JOIN roles AS rl ON rl.id = ur.role_id").
+		Where("u.deleted_at IS NULL").
+		Where("u.is_active = ?", true).
+		Where("rl.name = ?", model.AdminRoleName).
+		Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *entity.User) error {

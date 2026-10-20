@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
@@ -148,7 +149,6 @@ func (h *UserHandler) Get(ctx *gin.Context) {
 		Name:      output.Name,
 		Username:  output.Username,
 		Email:     output.Email,
-		IsAdmin:   output.IsAdmin,
 		IsActive:  output.IsActive,
 		CreatedAt: output.CreatedAt,
 		UpdatedAt: output.UpdatedAt,
@@ -200,7 +200,6 @@ func (h *UserHandler) List(ctx *gin.Context) {
 			Name:      user.Name,
 			Username:  user.Username,
 			Email:     user.Email,
-			IsAdmin:   user.IsAdmin,
 			IsActive:  user.IsActive,
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
@@ -308,13 +307,14 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 
 // Delete godoc
 // @Summary      Delete user
-// @Description  Deletes an existing user.
+// @Description  Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone.
 // @Tags         users
 // @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"
 // @Success      204  "User deleted"
 // @Failure      400  {object}  response.ErrorResponse
 // @Failure      401  {object}  response.ErrorResponse
+// @Failure      403  {object}  response.ErrorResponse
 // @Failure      404  {object}  response.ErrorResponse
 // @Failure      500  {object}  response.ErrorResponse
 // @Router       /users/{id} [delete]
@@ -328,12 +328,36 @@ func (h *UserHandler) Delete(ctx *gin.Context) {
 		return
 	}
 
-	input := dto.DeleteUserInput{ID: uri.ID}
+	// The rules below depend on who is performing the deletion, so the
+	// authenticated user must be available. JWTAuthMiddleware always sets it,
+	// and a missing value means the request was not properly authenticated.
+	actorID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Error: "unauthorized",
+		})
+		return
+	}
+
+	input := dto.DeleteUserInput{ID: uri.ID, ActorID: actorID}
 
 	if err := h.usecase.Delete(ctx.Request.Context(), input); err != nil {
-		if errors.Is(err, domainerr.ErrUserNotFound) {
+		switch {
+		case errors.Is(err, domainerr.ErrUserNotFound):
 			ctx.JSON(http.StatusNotFound, response.ErrorResponse{
 				Error: "user not found",
+			})
+			return
+
+		case errors.Is(err, domainerr.ErrAdminSelfDelete):
+			ctx.JSON(http.StatusForbidden, response.ErrorResponse{
+				Error: "admin cannot delete own account",
+			})
+			return
+
+		case errors.Is(err, domainerr.ErrLastAdmin):
+			ctx.JSON(http.StatusForbidden, response.ErrorResponse{
+				Error: "cannot delete the last active admin",
 			})
 			return
 		}

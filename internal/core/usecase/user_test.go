@@ -15,12 +15,19 @@ type stubUserRepository struct {
 	users  []*entity.User
 	limit  int
 	offset int
+
+	findByID     *entity.User
+	findByIDErr  error
+	isAdmin      bool
+	activeAdmins int64
+	deletedID    uint64
+	deleteCalls  int
 }
 
 func (s *stubUserRepository) Create(context.Context, *entity.User) error { return nil }
 
 func (s *stubUserRepository) FindByID(context.Context, uint64) (*entity.User, error) {
-	return nil, nil
+	return s.findByID, s.findByIDErr
 }
 
 func (s *stubUserRepository) FindAll(_ context.Context, limit, offset int) ([]*entity.User, error) {
@@ -32,7 +39,20 @@ func (s *stubUserRepository) FindAll(_ context.Context, limit, offset int) ([]*e
 
 func (s *stubUserRepository) Update(context.Context, *entity.User) error { return nil }
 
-func (s *stubUserRepository) Delete(context.Context, uint64) error { return nil }
+func (s *stubUserRepository) Delete(_ context.Context, id uint64) error {
+	s.deleteCalls++
+	s.deletedID = id
+
+	return nil
+}
+
+func (s *stubUserRepository) IsAdmin(context.Context, uint64) (bool, error) {
+	return s.isAdmin, nil
+}
+
+func (s *stubUserRepository) CountActiveAdmins(context.Context) (int64, error) {
+	return s.activeAdmins, nil
+}
 
 func TestUserUseCaseFindAllNormalizesPagination(t *testing.T) {
 	testCases := []struct {
@@ -169,5 +189,118 @@ func TestUserUseCaseCreateRejectsPasswordAboveBcryptLimit(t *testing.T) {
 
 	if hasher.hashes != 0 {
 		t.Fatalf("expected the hasher not to be called, got %d calls", hasher.hashes)
+	}
+}
+
+func TestUserUseCaseDeleteBlocksAdminSelfDeletion(t *testing.T) {
+	repo := &stubUserRepository{
+		findByID:     &entity.User{ID: 5, IsActive: true},
+		isAdmin:      true,
+		activeAdmins: 3,
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 5})
+	if !errors.Is(err, domainerr.ErrAdminSelfDelete) {
+		t.Fatalf("expected ErrAdminSelfDelete, got %v", err)
+	}
+
+	if repo.deleteCalls != 0 {
+		t.Fatalf("expected the repository not to be called, got %d calls", repo.deleteCalls)
+	}
+}
+
+func TestUserUseCaseDeleteBlocksRemovingLastActiveAdmin(t *testing.T) {
+	// Another user (with users:delete) tries to remove the only active admin,
+	// which would lock the application out of privileged operations.
+	repo := &stubUserRepository{
+		findByID:     &entity.User{ID: 5, IsActive: true},
+		isAdmin:      true,
+		activeAdmins: 1,
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9})
+	if !errors.Is(err, domainerr.ErrLastAdmin) {
+		t.Fatalf("expected ErrLastAdmin, got %v", err)
+	}
+
+	if repo.deleteCalls != 0 {
+		t.Fatalf("expected the repository not to be called, got %d calls", repo.deleteCalls)
+	}
+}
+
+func TestUserUseCaseDeleteAllowsAdminToRemoveAnotherAdmin(t *testing.T) {
+	repo := &stubUserRepository{
+		findByID:     &entity.User{ID: 5, IsActive: true},
+		isAdmin:      true,
+		activeAdmins: 2,
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.deleteCalls != 1 || repo.deletedID != 5 {
+		t.Fatalf("expected user 5 to be deleted, got %d calls for id %d", repo.deleteCalls, repo.deletedID)
+	}
+}
+
+func TestUserUseCaseDeleteAllowsRemovingDeactivatedSoleAdmin(t *testing.T) {
+	// A deactivated admin cannot exercise any permission, so the account is
+	// already not usable as an administrator and may be cleaned up.
+	repo := &stubUserRepository{
+		findByID:     &entity.User{ID: 5, IsActive: false},
+		isAdmin:      true,
+		activeAdmins: 0,
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.deleteCalls != 1 || repo.deletedID != 5 {
+		t.Fatalf("expected user 5 to be deleted, got %d calls for id %d", repo.deleteCalls, repo.deletedID)
+	}
+}
+
+func TestUserUseCaseDeleteAllowsRegularUserSelfDeletion(t *testing.T) {
+	// The self-deletion restriction only applies to administrators.
+	repo := &stubUserRepository{
+		findByID: &entity.User{ID: 7, IsActive: true},
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 7, ActorID: 7}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if repo.deleteCalls != 1 || repo.deletedID != 7 {
+		t.Fatalf("expected user 7 to be deleted, got %d calls for id %d", repo.deleteCalls, repo.deletedID)
+	}
+}
+
+func TestUserUseCaseDeletePropagatesNotFound(t *testing.T) {
+	repo := &stubUserRepository{
+		findByIDErr: domainerr.ErrUserNotFound,
+		isAdmin:     true,
+	}
+
+	uc := NewUserUseCase(repo, &stubPasswordHasher{})
+
+	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 404, ActorID: 9})
+	if !errors.Is(err, domainerr.ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound, got %v", err)
+	}
+
+	if repo.deleteCalls != 0 {
+		t.Fatalf("expected the repository not to be called, got %d calls", repo.deleteCalls)
 	}
 }

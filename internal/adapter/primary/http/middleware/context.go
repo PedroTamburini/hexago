@@ -17,7 +17,11 @@ func setUserID(c *gin.Context, userID uint64) {
 	c.Set(string(userIDKey), userID)
 }
 
-func getUserID(c *gin.Context) (uint64, bool) {
+// GetUserID returns the ID of the user placed in the context by
+// JWTAuthMiddleware. Handlers use it to know who is performing a request, for
+// instance when the rules of an operation depend on the actor (deleting
+// oneself, deleting the last admin, ...).
+func GetUserID(c *gin.Context) (uint64, bool) {
 	value, exists := c.Get(string(userIDKey))
 	if !exists {
 		return 0, false
