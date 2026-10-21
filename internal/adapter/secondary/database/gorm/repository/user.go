@@ -80,8 +80,26 @@ func (r *UserRepository) FindAll(ctx context.Context, limit, offset int) ([]*ent
 	return users, nil
 }
 
+// Delete removes a user. The removal is a soft delete: the row stays in the
+// table but leaves the unique indexes, so the identity it held can be
+// registered again. The account is deactivated in the same statement, so a
+// removed user never keeps the active flag that says the account is still
+// usable.
+//
+// Both columns are written by a single statement to avoid a window in which
+// the account is removed but still reported as active. The soft delete scope
+// of GORM keeps the statement restricted to the rows that were not removed
+// yet, so deleting an already deleted user affects no row and is reported as
+// not found.
 func (r *UserRepository) Delete(ctx context.Context, id uint64) error {
-	result := r.db.WithContext(ctx).Delete(&model.UserModel{}, id)
+	result := r.db.WithContext(ctx).
+		Model(&model.UserModel{}).
+		Where("id = ?", id).
+		Updates(map[string]any{
+			"is_active":  false,
+			"deleted_at": r.db.NowFunc(),
+		})
+
 	if result.Error != nil {
 		return result.Error
 	}

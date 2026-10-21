@@ -109,7 +109,9 @@ covered every row and the identity was reserved forever, which answered
 `409 user already exists` to a legitimate registration.
 
 A deactivated account (`is_active = false`) keeps holding its username and its
-email: only a removal frees them.
+email: only a removal frees them. Removing an account deactivates it in the
+same statement, so a removed user never keeps the `is_active` flag that says
+the account is still usable.
 
 The indexes are declared in the `UserModel` and created by the automatic
 migration (`DB_AUTO_MIGRATION=true`). Environments that manage the schema by
@@ -120,6 +122,13 @@ dropped:
 ```sql
 DROP INDEX IF EXISTS idx_user_username;
 DROP INDEX IF EXISTS idx_user_email;
+```
+
+A database created before the removal started deactivating the accounts also
+holds rows that were deleted while still active, which can be fixed with:
+
+```sql
+UPDATE "user" SET is_active = false WHERE deleted_at IS NOT NULL AND is_active = true;
 ```
 
 The indexes currently in place can be inspected with:

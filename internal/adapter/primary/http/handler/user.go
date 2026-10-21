@@ -307,7 +307,7 @@ func (h *UserHandler) Update(ctx *gin.Context) {
 
 // Delete godoc
 // @Summary      Delete user
-// @Description  Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone.
+// @Description  Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone. The account is deactivated in the process.
 // @Tags         users
 // @Security     BearerAuth
 // @Param        id   path      int  true  "User ID"

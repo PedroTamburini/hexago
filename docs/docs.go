@@ -322,7 +322,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone.",
+                "description": "Deletes an existing user. An admin cannot delete their own account, and the last active admin cannot be deleted by anyone. The account is deactivated in the process.",
                 "tags": [
                     "users"
                 ],
