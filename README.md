@@ -92,6 +92,42 @@ an attacker reset the window by forcing a bounce.
   `TRUSTED_PROXIES` to that proxy's IPs/CIDRs (comma-separated) so the forwarded
   client IP is honoured without letting arbitrary clients spoof it.
 
+## Unique usernames and emails
+
+The `username` and the `email` are unique **among the accounts that were not
+removed**. The database enforces it with partial unique indexes:
+
+```sql
+CREATE UNIQUE INDEX uniq_user_username ON "user" (username) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX uniq_user_email    ON "user" (email)    WHERE deleted_at IS NULL;
+```
+
+Removing a user is a soft delete, so the row stays in the table but leaves the
+index: the identity it held becomes available again and the same username or
+email can be registered by a new account. Before this change the indexes
+covered every row and the identity was reserved forever, which answered
+`409 user already exists` to a legitimate registration.
+
+A deactivated account (`is_active = false`) keeps holding its username and its
+email: only a removal frees them.
+
+The indexes are declared in the `UserModel` and created by the automatic
+migration (`DB_AUTO_MIGRATION=true`). Environments that manage the schema by
+hand need the DDL above, and a database created before this change also carries
+the old full unique indexes, which keep blocking the reuse until they are
+dropped:
+
+```sql
+DROP INDEX IF EXISTS idx_user_username;
+DROP INDEX IF EXISTS idx_user_email;
+```
+
+The indexes currently in place can be inspected with:
+
+```sql
+SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'user';
+```
+
 ## Configuration
 
 Settings are read from the environment at startup and the process **fails fast**
