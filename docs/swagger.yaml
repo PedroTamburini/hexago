@@ -79,6 +79,30 @@ definitions:
           $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.UserResponse'
         type: array
     type: object
+  github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.FindUserSessionsResponse:
+    properties:
+      sessions:
+        items:
+          $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.SessionResponse'
+        type: array
+    type: object
+  github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.SessionResponse:
+    properties:
+      expires_at:
+        type: string
+      ip:
+        type: string
+      is_current:
+        type: boolean
+      issued_at:
+        type: string
+      jti:
+        type: string
+      user_agent:
+        type: string
+      user_id:
+        type: integer
+    type: object
   github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.UpdateUserResponse:
     properties:
       email:
@@ -117,6 +141,115 @@ info:
   title: hexago API
   version: "1.0"
 paths:
+  /admin/sessions/{jti}:
+    delete:
+      description: Revokes one active session by its token ID. The token stops being
+        accepted immediately.
+      parameters:
+      - description: Token ID (jti)
+        in: path
+        name: jti
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke session
+      tags:
+      - sessions
+  /admin/users/{id}/sessions:
+    delete:
+      description: Invalidates every token of a user by bumping the token version,
+        and clears the session records.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke all user sessions
+      tags:
+      - sessions
+    get:
+      description: Lists the active sessions of a user. The session used in the request
+        is flagged with is_current.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.FindUserSessionsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List user sessions
+      tags:
+      - sessions
   /auth:
     post:
       consumes:
@@ -149,6 +282,28 @@ paths:
           schema:
             $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
       summary: Authenticate
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: Revokes the access token used in the request. The token is added
+        to the denylist until it would have expired and its session is removed.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_PedroTamburini_hexago_internal_adapter_primary_http_response.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Logout
       tags:
       - auth
   /users:

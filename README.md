@@ -81,6 +81,59 @@ Redis runs with AOF persistence enabled (`--appendonly yes`, see
 `docker-compose.yml`), so the token buckets survive a restart instead of letting
 an attacker reset the window by forcing a bounce.
 
+## Tokens, revocation and sessions
+
+Access tokens are HS256 JWTs valid for **15 minutes** by default
+(`JWT_EXPIRATION`). When a token expires the client authenticates again; there
+is no refresh token. The short lifetime bounds the damage of a leaked token,
+while two additional checks make revocation immediate:
+
+* **Denylist (`jti`)** — the token ID is stored in Redis until the token would
+  have expired. `POST /api/v1/auth/logout` denies the token used in the request.
+* **Token version (`tv` claim)** — each user has a version stored in Redis
+  (`tokenver:user:{id}`). Tokens carry the version that was current when they
+  were issued; incrementing it invalidates every token of that user at once.
+
+Every protected request validates the signature, checks the denylist and compares
+the token version, so a revoked token stops working on the next request instead
+of at its natural expiration. If Redis is unreachable the API **fails closed**:
+the request is rejected with `503` rather than trusting an unchecked token.
+
+The token version lives outside PostgreSQL on purpose: revoking every session of
+a user needs no schema change, and an existing database keeps working untouched.
+Tokens issued before this feature carry no `tv` claim, which is read as version
+`0`, the default for a user whose version was never incremented.
+
+### Active sessions and the administrative panel
+
+Each login records a session (`session:{jti}` plus an index per user in
+`sessions:user:{id}`) with the token ID, expiration, IP and user agent. The
+records expire on their own with the token, so the panel never lists stale
+sessions. Three endpoints manage them, all guarded by RBAC:
+
+| Endpoint | Permission | Effect |
+| --- | --- | --- |
+| `GET /api/v1/admin/users/{id}/sessions` | `sessions:read` | Lists active sessions; the session making the request is flagged `is_current`. |
+| `DELETE /api/v1/admin/sessions/{jti}` | `sessions:revoke` | Revokes one session immediately (denylist + registry removal). Use this when a single token leaks. |
+| `DELETE /api/v1/admin/users/{id}/sessions` | `sessions:revoke` | Revokes every session of a user by bumping the token version. Use this after a password reset or when an account is compromised. |
+
+The seed grants the new permissions to the admin role on boot, so an existing
+installation picks them up without a manual migration.
+
+### Redis keys and fallback
+
+Denylist, sessions and token versions share the Redis instance used by the rate
+limiter, separated by prefix (`denylist:token:`, `session:`,
+`sessions:user:`, `tokenver:user:`). Entries carry a TTL, so none of them
+accumulate.
+
+When `RATE_LIMIT_ENABLED=false` no Redis connection is opened; the API then uses
+process-local implementations so the documented development setup still boots.
+Those are suitable for a single instance only: the denylist and the sessions are
+lost on restart and are not shared between replicas. Any deployment with more
+than one instance (or that needs revocation to survive a restart) must run with
+Redis enabled.
+
 ## Request limits and client IP
 
 * **Body size** — request bodies larger than `SERVER_MAX_BODY_BYTES` (default
