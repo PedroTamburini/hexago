@@ -147,10 +147,13 @@ func wire(
 		sessions,
 		tokenVersions,
 	)
+	sessionManagementUseCase := usecase.NewSessionManagementUseCase(sessions, denylist, tokenVersions)
+
 	// Primary adapters (handlers)
 	handlers := &routes.Handlers{
-		User: handler.NewUserHandler(userUseCase),
-		Auth: handler.NewAuthHandler(authenticationUseCase),
+		User:    handler.NewUserHandler(userUseCase),
+		Auth:    handler.NewAuthHandler(authenticationUseCase),
+		Session: handler.NewSessionHandler(sessionManagementUseCase),
 	}
 
 	return routes.Dependencies{

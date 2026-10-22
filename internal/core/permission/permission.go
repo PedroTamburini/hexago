@@ -5,14 +5,16 @@
 package permission
 
 const (
-	UsersRead   = "users:read"
-	UsersCreate = "users:create"
-	UsersUpdate = "users:update"
-	UsersDelete = "users:delete"
+	UsersRead      = "users:read"
+	UsersCreate    = "users:create"
+	UsersUpdate    = "users:update"
+	UsersDelete    = "users:delete"
+	SessionsRead   = "sessions:read"
+	SessionsRevoke = "sessions:revoke"
 )
 
 // All returns every permission known to the application. The seed uses it to
 // grant the admin role all permissions without duplicating the list.
 func All() []string {
-	return []string{UsersRead, UsersCreate, UsersUpdate, UsersDelete}
+	return []string{UsersRead, UsersCreate, UsersUpdate, UsersDelete, SessionsRead, SessionsRevoke}
 }

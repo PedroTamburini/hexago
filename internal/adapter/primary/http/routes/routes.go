@@ -46,8 +46,9 @@ type RateLimiters struct {
 
 // Handlers groups the primary adapters (HTTP handlers) bound to the routes.
 type Handlers struct {
-	User *handler.UserHandler
-	Auth *handler.AuthHandler
+	User    *handler.UserHandler
+	Auth    *handler.AuthHandler
+	Session *handler.SessionHandler
 }
 
 // Register installs the global middleware and the route tree on the engine. It
@@ -98,6 +99,16 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		users.GET("/:id", guard(deps, permission.UsersRead), deps.Handlers.User.Get)
 		users.PUT("/:id", guard(deps, permission.UsersUpdate), deps.Handlers.User.Update)
 		users.DELETE("/:id", guard(deps, permission.UsersDelete), deps.Handlers.User.Delete)
+
+		admin := v1.Group("/admin")
+		admin.Use(
+			authenticate,
+			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),
+		)
+
+		admin.GET("/users/:id/sessions", guard(deps, permission.SessionsRead), deps.Handlers.Session.ListUserSessions)
+		admin.DELETE("/users/:id/sessions", guard(deps, permission.SessionsRevoke), deps.Handlers.Session.RevokeAllUserSessions)
+		admin.DELETE("/sessions/:jti", guard(deps, permission.SessionsRevoke), deps.Handlers.Session.RevokeSession)
 	}
 }
 
