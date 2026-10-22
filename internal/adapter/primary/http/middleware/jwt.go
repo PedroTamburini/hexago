@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
@@ -10,7 +11,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func JWTAuthMiddleware(tokenValidator portout.TokenValidator) gin.HandlerFunc {
+// JWTAuthMiddleware authenticates a Bearer token in three steps: the token must
+// be cryptographically valid, its jti must not be denied and its token version
+// must match the one currently stored for the user. The last two checks are what
+// make revocation immediate instead of waiting for the token to expire.
+func JWTAuthMiddleware(
+	parser portout.TokenParser,
+	denylist portout.TokenDenylist,
+	tokenVersions portout.TokenVersionManager,
+) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -24,13 +33,45 @@ func JWTAuthMiddleware(tokenValidator portout.TokenValidator) gin.HandlerFunc {
 			return
 		}
 
-		userID, err := tokenValidator.ValidateToken(parts[1])
+		claims, err := parser.ParseClaims(parts[1])
 		if err != nil {
 			abortWithError(c, http.StatusUnauthorized, domainerr.ErrInvalidToken, "invalid or expired token")
 			return
 		}
 
+		userID, err := strconv.ParseUint(claims.Subject, 10, 64)
+		if err != nil {
+			abortWithError(c, http.StatusUnauthorized, domainerr.ErrInvalidToken, "invalid or expired token")
+			return
+		}
+
+		revoked, err := denylist.IsRevoked(c.Request.Context(), claims.JTI)
+		if err != nil {
+			// The denylist is an infrastructure dependency and the check is a
+			// security control: fail closed, but report the real cause instead
+			// of pretending the credentials are wrong.
+			_ = c.Error(err)
+			abortWithError(c, http.StatusServiceUnavailable, err, "authentication temporarily unavailable")
+			return
+		}
+		if revoked {
+			abortWithError(c, http.StatusUnauthorized, domainerr.ErrTokenRevoked, "token revoked")
+			return
+		}
+
+		currentVersion, err := tokenVersions.GetVersion(c.Request.Context(), userID)
+		if err != nil {
+			_ = c.Error(err)
+			abortWithError(c, http.StatusServiceUnavailable, err, "authentication temporarily unavailable")
+			return
+		}
+		if claims.TokenVer != currentVersion {
+			abortWithError(c, http.StatusUnauthorized, domainerr.ErrInvalidTokenVer, "invalid or expired token")
+			return
+		}
+
 		setUserID(c, userID)
+		setTokenJTI(c, claims.JTI)
 		c.Next()
 	}
 }

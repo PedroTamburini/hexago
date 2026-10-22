@@ -154,10 +154,12 @@ func wire(
 	}
 
 	return routes.Dependencies{
-		Tokens:     tokens,
-		Permission: permissionChecker,
-		Handlers:   handlers,
-		RateLimit:  newRateLimiters(cfg, redisClient),
+		TokenParser:   tokens,
+		Denylist:      denylist,
+		TokenVersions: tokenVersions,
+		Permission:    permissionChecker,
+		Handlers:      handlers,
+		RateLimit:     newRateLimiters(cfg, redisClient),
 	}
 }
 

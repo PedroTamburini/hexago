@@ -25,9 +25,11 @@ type Options struct {
 // Keeping it in a single struct avoids a growing list of positional parameters
 // and makes the composition root explicit.
 type Dependencies struct {
-	Tokens     portout.TokenValidator
-	Permission portout.PermissionChecker
-	Handlers   *Handlers
+	TokenParser   portout.TokenParser
+	Denylist      portout.TokenDenylist
+	TokenVersions portout.TokenVersionManager
+	Permission    portout.PermissionChecker
+	Handlers      *Handlers
 	// RateLimit carries the per-scope limiters. A nil field disables that scope
 	// (the middleware becomes a pass-through), so the route tree can install it
 	// unconditionally.
@@ -67,6 +69,8 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 
 	engine.GET("/health", handler.Health)
 
+	authenticate := middleware.JWTAuthMiddleware(deps.TokenParser, deps.Denylist, deps.TokenVersions)
+
 	v1 := engine.Group("/api/v1")
 	v1.Use(middleware.BodyLimit(int64(opts.MaxBodyBytes)))
 	{
@@ -75,9 +79,15 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 			deps.Handlers.Auth.Authenticate,
 		)
 
+		v1.POST("/auth/logout",
+			authenticate,
+			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),
+			deps.Handlers.Auth.Logout,
+		)
+
 		users := v1.Group("/users")
 		users.Use(
-			middleware.JWTAuthMiddleware(deps.Tokens),
+			authenticate,
 			// Rate limiting must run after JWTAuthMiddleware so the bucket can be
 			// keyed on the authenticated user instead of the shared client IP.
 			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),

@@ -10,6 +10,7 @@ type contextKey string
 
 const (
 	userIDKey    contextKey = "user_id"
+	tokenJTIKey  contextKey = "token_jti"
 	requestIDKey contextKey = "request_id"
 )
 
@@ -29,6 +30,23 @@ func GetUserID(c *gin.Context) (uint64, bool) {
 
 	userID, ok := value.(uint64)
 	return userID, ok
+}
+
+func setTokenJTI(c *gin.Context, jti string) {
+	c.Set(string(tokenJTIKey), jti)
+}
+
+// GetTokenJTI returns the jti of the token that authenticated the request. It
+// lets handlers distinguish the current session from the others when listing
+// them.
+func GetTokenJTI(c *gin.Context) (string, bool) {
+	value, exists := c.Get(string(tokenJTIKey))
+	if !exists {
+		return "", false
+	}
+
+	jti, ok := value.(string)
+	return jti, ok
 }
 
 func setRequestID(c *gin.Context, requestID string) {

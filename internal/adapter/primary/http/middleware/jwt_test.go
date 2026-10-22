@@ -5,17 +5,90 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/gin-gonic/gin"
 )
 
-type stubTokenValidator struct {
-	userID uint64
+type stubTokenParser struct {
+	claims *portout.TokenClaims
 	err    error
 }
 
-func (s stubTokenValidator) ValidateToken(_ string) (uint64, error) {
-	return s.userID, s.err
+func (s stubTokenParser) ParseClaims(_ string) (*portout.TokenClaims, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.claims, nil
+}
+
+type stubTokenDenylist struct {
+	revoked bool
+	err     error
+}
+
+func (s stubTokenDenylist) IsRevoked(context.Context, string) (bool, error) {
+	return s.revoked, s.err
+}
+
+func (s stubTokenDenylist) Revoke(context.Context, string, time.Time) error {
+	return nil
+}
+
+type stubTokenVersions struct {
+	version int
+	err     error
+}
+
+func (s stubTokenVersions) GetVersion(context.Context, uint64) (int, error) {
+	return s.version, s.err
+}
+
+func (s stubTokenVersions) IncrementVersion(context.Context, uint64) (int, error) {
+	return s.version + 1, nil
+}
+
+func testClaims() *portout.TokenClaims {
+	return &portout.TokenClaims{
+		JTI:       "token-jti",
+		Subject:   "42",
+		TokenVer:  0,
+		IssuedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(15 * time.Minute),
+	}
+}
+
+func newTestEngine(
+	parser portout.TokenParser,
+	denylist portout.TokenDenylist,
+	versions portout.TokenVersionManager,
+	checker recordingPermissionChecker,
+) *gin.Engine {
+	engine := gin.New()
+	engine.GET(
+		"/x",
+		JWTAuthMiddleware(parser, denylist, versions),
+		RequirePermission(checker, "users:read"),
+		func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		},
+	)
+
+	return engine
+}
+
+func serve(engine *gin.Engine, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	return rec
 }
 
 // TestJWTAuthMiddlewareFeedsRequirePermission guards the regression that caused
@@ -32,21 +105,14 @@ func TestJWTAuthMiddlewareFeedsRequirePermission(t *testing.T) {
 		permission: &receivedPermission,
 	}
 
-	engine := gin.New()
-	engine.GET(
-		"/x",
-		JWTAuthMiddleware(stubTokenValidator{userID: 42}),
-		RequirePermission(checker, "users:read"),
-		func(c *gin.Context) {
-			c.Status(http.StatusOK)
-		},
+	engine := newTestEngine(
+		stubTokenParser{claims: testClaims()},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+		checker,
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
-	req.Header.Set("Authorization", "Bearer valid-token")
-
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
+	rec := serve(engine, "valid-token")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -58,6 +124,81 @@ func TestJWTAuthMiddlewareFeedsRequirePermission(t *testing.T) {
 
 	if receivedPermission != "users:read" {
 		t.Fatalf("checker received permission = %q, want %q", receivedPermission, "users:read")
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsRevokedToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	checker := recordingPermissionChecker{userID: new(uint64), permission: new(string)}
+	engine := newTestEngine(
+		stubTokenParser{claims: testClaims()},
+		stubTokenDenylist{revoked: true},
+		stubTokenVersions{},
+		checker,
+	)
+
+	rec := serve(engine, "revoked-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsStaleTokenVersion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	claims := testClaims()
+	claims.TokenVer = 1
+
+	checker := recordingPermissionChecker{userID: new(uint64), permission: new(string)}
+	engine := newTestEngine(
+		stubTokenParser{claims: claims},
+		stubTokenDenylist{},
+		stubTokenVersions{version: 2},
+		checker,
+	)
+
+	rec := serve(engine, "stale-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareFailsClosedWhenDenylistIsUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	checker := recordingPermissionChecker{userID: new(uint64), permission: new(string)}
+	engine := newTestEngine(
+		stubTokenParser{claims: testClaims()},
+		stubTokenDenylist{err: context.DeadlineExceeded},
+		stubTokenVersions{},
+		checker,
+	)
+
+	rec := serve(engine, "valid-token")
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsMissingHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	checker := recordingPermissionChecker{userID: new(uint64), permission: new(string)}
+	engine := newTestEngine(
+		stubTokenParser{claims: testClaims()},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+		checker,
+	)
+
+	rec := serve(engine, "")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 
