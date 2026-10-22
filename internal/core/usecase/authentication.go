@@ -24,14 +24,20 @@ const (
 type authenticationUseCase struct {
 	userCredentialsFinder portout.AuthenticationRepository
 	hasher                portout.PasswordHasher
-	tokens                portout.TokenIssuer
+	tokens                portout.TokenService
+	denylist              portout.TokenDenylist
+	sessions              portout.SessionRegistry
+	tokenVersions         portout.TokenVersionManager
 	dummyHash             string
 }
 
 func NewAuthenticationUseCase(
 	userCredentialsFinder portout.AuthenticationRepository,
 	hasher portout.PasswordHasher,
-	tokens portout.TokenIssuer,
+	tokens portout.TokenService,
+	denylist portout.TokenDenylist,
+	sessions portout.SessionRegistry,
+	tokenVersions portout.TokenVersionManager,
 ) portin.AuthenticationUseCase {
 	dummyHash := dummyPasswordHash
 
@@ -43,6 +49,9 @@ func NewAuthenticationUseCase(
 		userCredentialsFinder: userCredentialsFinder,
 		hasher:                hasher,
 		tokens:                tokens,
+		denylist:              denylist,
+		sessions:              sessions,
+		tokenVersions:         tokenVersions,
 		dummyHash:             dummyHash,
 	}
 }
@@ -70,13 +79,69 @@ func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.Auth
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	token, err := u.tokens.GenerateToken(credentials.ID)
+	tokenVersion, err := u.tokenVersions.GetVersion(ctx, credentials.ID)
 	if err != nil {
 		return nil, err
+	}
+
+	token, err := u.tokens.GenerateToken(credentials.ID, tokenVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	// The session record powers the administrative panel and the per-session
+	// revocation. Failing to record it must not fail the login: the token is
+	// already valid, and the record is an observability aid.
+	if claims, err := u.tokens.ParseClaims(token); err == nil {
+		_ = u.sessions.Register(ctx, portout.Session{
+			JTI:       claims.JTI,
+			UserID:    credentials.ID,
+			IssuedAt:  claims.IssuedAt,
+			ExpiresAt: claims.ExpiresAt,
+			IP:        input.IP,
+			UserAgent: input.UserAgent,
+		})
 	}
 
 	return &dto.AuthenticateOutput{
 		Token:    token,
 		ExpireIn: u.tokens.ExpireSeconds(),
 	}, nil
+}
+
+// Logout revokes the token presented by the client. It is an alias of
+// RevokeToken so callers can express intent without depending on the naming.
+func (u *authenticationUseCase) Logout(ctx context.Context, token string) error {
+	return u.RevokeToken(ctx, token)
+}
+
+// RevokeToken denies a single token until it would have expired and removes its
+// session record. An already invalid token produces no error: revocation is
+// idempotent, so a second logout does not surface as a server failure.
+func (u *authenticationUseCase) RevokeToken(ctx context.Context, token string) error {
+	claims, err := u.tokens.ParseClaims(token)
+	if err != nil {
+		return domainerr.ErrInvalidToken
+	}
+
+	if err := u.denylist.Revoke(ctx, claims.JTI, claims.ExpiresAt); err != nil {
+		return err
+	}
+
+	if err := u.sessions.Remove(ctx, claims.JTI); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// RevokeAllUserTokens invalidates every token of a user at once by bumping the
+// token version, and clears the session records. It is the operation meant for
+// flows such as a password reset or a compromised account.
+func (u *authenticationUseCase) RevokeAllUserTokens(ctx context.Context, userID uint64) error {
+	if _, err := u.tokenVersions.IncrementVersion(ctx, userID); err != nil {
+		return err
+	}
+
+	return u.sessions.RemoveAllByUserID(ctx, userID)
 }

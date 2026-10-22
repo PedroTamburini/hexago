@@ -120,7 +120,7 @@ func LoadConfig() (*Config, error) {
 		DBAutoMigration:       envParse(&parseErr, "DB_AUTO_MIGRATION", false, strconv.ParseBool),
 		HasherCost:            envParse(&parseErr, "HASHER_COST", 12, strconv.Atoi),
 		JWTSecret:             env("JWT_SECRET", ""),
-		JWTExpiration:         envParse(&parseErr, "JWT_EXPIRATION", 24*time.Hour, time.ParseDuration),
+		JWTExpiration:         envParse(&parseErr, "JWT_EXPIRATION", 15*time.Minute, time.ParseDuration),
 		SeedEnabled:           envParse(&parseErr, "SEED_ENABLED", false, strconv.ParseBool),
 		AdminUsername:         env("ADMIN_USERNAME", "admin.local"),
 		AdminEmail:            env("ADMIN_EMAIL", "admin@hexago.local"),

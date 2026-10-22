@@ -21,6 +21,7 @@ import (
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/repository"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/ratelimit"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/security"
+	"github.com/PedroTamburini/hexago/internal/adapter/secondary/tokenstore"
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 	"github.com/PedroTamburini/hexago/internal/core/usecase"
 	"github.com/PedroTamburini/hexago/internal/infrastructure/config"
@@ -130,10 +131,22 @@ func wire(
 	authenticationRepository := repository.NewAuthenticationRepository(db.DB)
 	permissionChecker := repository.NewAuthorizationRepository(db.DB)
 
+	// Token management (denylist, session registry and token versions). They
+	// share the Redis instance used by the rate limiter, separated by key
+	// prefix. Without Redis they fall back to process-local implementations so
+	// the documented "rate limiting disabled" development setup still boots.
+	denylist, sessions, tokenVersions := newTokenStores(redisClient)
+
 	// Use cases
 	userUseCase := usecase.NewUserUseCase(userRepository, hasher)
-	authenticationUseCase := usecase.NewAuthenticationUseCase(authenticationRepository, hasher, tokens)
-
+	authenticationUseCase := usecase.NewAuthenticationUseCase(
+		authenticationRepository,
+		hasher,
+		tokens,
+		denylist,
+		sessions,
+		tokenVersions,
+	)
 	// Primary adapters (handlers)
 	handlers := &routes.Handlers{
 		User: handler.NewUserHandler(userUseCase),
@@ -146,6 +159,25 @@ func wire(
 		Handlers:   handlers,
 		RateLimit:  newRateLimiters(cfg, redisClient),
 	}
+}
+
+// newTokenStores builds the token management stores. Redis is the production
+// choice because the state must survive a restart and be shared by every
+// instance; the in-memory variants keep the API usable when Redis is disabled.
+func newTokenStores(redisClient *goredis.Client) (
+	portout.TokenDenylist,
+	portout.SessionRegistry,
+	portout.TokenVersionManager,
+) {
+	if redisClient == nil {
+		return tokenstore.NewMemoryTokenDenylist(),
+			tokenstore.NewMemorySessionRegistry(),
+			tokenstore.NewMemoryTokenVersionManager()
+	}
+
+	return tokenstore.NewTokenDenylist(redisClient),
+		tokenstore.NewSessionRegistry(redisClient),
+		tokenstore.NewTokenVersionManager(redisClient)
 }
 
 // newRateLimiters builds the two token buckets used by the API: a strict one for

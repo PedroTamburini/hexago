@@ -33,9 +33,10 @@ type PasswordHasher interface {
 }
 
 // TokenIssuer mints access tokens for a given subject. It is the capability
-// required by the authentication flow.
+// required by the authentication flow. The token version is embedded in the
+// token so a later increment invalidates every token issued before it.
 type TokenIssuer interface {
-	GenerateToken(userID uint64) (string, error)
+	GenerateToken(userID uint64, tokenVersion int) (string, error)
 	ExpireSeconds() int64
 }
 
@@ -47,8 +48,9 @@ type TokenValidator interface {
 
 // TokenService is the composite capability implemented by the token adapter.
 // It exists for composition only: consumers should depend on the narrow
-// interface they actually need (TokenIssuer or TokenValidator).
+// interface they actually need (TokenIssuer, TokenValidator or TokenParser).
 type TokenService interface {
 	TokenIssuer
 	TokenValidator
+	TokenParser
 }
