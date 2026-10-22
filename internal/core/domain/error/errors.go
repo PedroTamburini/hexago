@@ -16,4 +16,7 @@ var (
 	ErrMissingAuthHeader  = errors.New("missing authorization header")
 	ErrInvalidAuthHeader  = errors.New("invalid authorization header")
 	ErrInvalidToken       = errors.New("invalid access token")
+	ErrTokenRevoked       = errors.New("token revoked")
+	ErrInvalidTokenVer    = errors.New("invalid token version")
+	ErrSessionNotFound    = errors.New("session not found")
 )
