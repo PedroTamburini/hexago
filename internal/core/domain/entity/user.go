@@ -69,3 +69,8 @@ func (u *User) Update(name, username, email string) error {
 
 	return nil
 }
+
+type Role struct {
+	ID   uint64
+	Name string
+}

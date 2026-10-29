@@ -71,3 +71,34 @@ type DeleteUserInput struct {
 	// an admin deleting their own account).
 	ActorID uint64
 }
+
+type SetUserStatusInput struct {
+	ID       uint64
+	ActorID  uint64
+	IsActive bool
+}
+
+type SetUserStatusOutput struct {
+	ID       uint64
+	IsActive bool
+}
+
+type ResetPasswordInput struct {
+	TargetID uint64
+}
+
+type ResetPasswordOutput struct {
+	// TemporaryPassword is returned as plaintext so an administrator can hand it
+	// to the user; only its hash is persisted.
+	TemporaryPassword string
+}
+
+type AssignRoleInput struct {
+	TargetID uint64
+	RoleID   uint64
+}
+
+type RemoveRoleInput struct {
+	TargetID uint64
+	RoleID   uint64
+}

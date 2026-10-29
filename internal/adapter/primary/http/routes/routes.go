@@ -86,6 +86,15 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 			deps.Handlers.Auth.Logout,
 		)
 
+		// This route accepts the restricted token issued after a login with a
+		// temporary password, so it cannot use the standard authentication
+		// middleware.
+		v1.POST("/auth/change-password",
+			middleware.JWTAuthMiddlewareAllowPasswordChange(deps.TokenParser, deps.Denylist, deps.TokenVersions),
+			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),
+			deps.Handlers.Auth.ChangePassword,
+		)
+
 		users := v1.Group("/users")
 		users.Use(
 			authenticate,
@@ -99,6 +108,10 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		users.GET("/:id", guard(deps, permission.UsersRead), deps.Handlers.User.Get)
 		users.PUT("/:id", guard(deps, permission.UsersUpdate), deps.Handlers.User.Update)
 		users.DELETE("/:id", guard(deps, permission.UsersDelete), deps.Handlers.User.Delete)
+		users.PATCH("/:id/status", guard(deps, permission.UsersStatus), deps.Handlers.User.SetStatus)
+		users.POST("/:id/password/reset", guard(deps, permission.UsersResetPassword), deps.Handlers.User.ResetPassword)
+		users.POST("/:id/roles/:role_id", guard(deps, permission.RolesManage), deps.Handlers.User.AssignRole)
+		users.DELETE("/:id/roles/:role_id", guard(deps, permission.RolesManage), deps.Handlers.User.RemoveRole)
 
 		admin := v1.Group("/admin")
 		admin.Use(

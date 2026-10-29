@@ -138,16 +138,30 @@ func wire(
 	denylist, sessions, tokenVersions := newTokenStores(redisClient)
 
 	// Use cases
-	userUseCase := usecase.NewUserUseCase(userRepository, hasher)
 	authenticationUseCase := usecase.NewAuthenticationUseCase(
 		authenticationRepository,
+		userRepository,
 		hasher,
 		tokens,
 		denylist,
 		sessions,
 		tokenVersions,
 	)
-	sessionManagementUseCase := usecase.NewSessionManagementUseCase(sessions, denylist, tokenVersions)
+
+	// The user use case owns status changes and password resets, so it receives
+	// the token stores needed to revoke every session of the affected user.
+	userUseCase := usecase.NewUserUseCase(
+		userRepository,
+		hasher,
+		tokenVersions,
+		sessions,
+	)
+
+	sessionManagementUseCase := usecase.NewSessionManagementUseCase(
+		sessions,
+		denylist,
+		tokenVersions,
+	)
 
 	// Primary adapters (handlers)
 	handlers := &routes.Handlers{
