@@ -55,6 +55,7 @@ func testClaims() *portout.TokenClaims {
 		JTI:       "token-jti",
 		Subject:   "42",
 		TokenVer:  0,
+		Purpose:   portout.TokenPurposeAccess,
 		IssuedAt:  time.Now(),
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
@@ -196,6 +197,84 @@ func TestJWTAuthMiddlewareRejectsMissingHeader(t *testing.T) {
 	)
 
 	rec := serve(engine, "")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsPasswordChangeToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	claims := testClaims()
+	claims.Purpose = portout.TokenPurposeChangePassword
+
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddleware(
+		stubTokenParser{claims: claims},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+	), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "temporary-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareAllowPasswordChangeAcceptsBothPurposes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	testCases := []struct {
+		name    string
+		purpose string
+	}{
+		{name: "access token", purpose: portout.TokenPurposeAccess},
+		{name: "password change token", purpose: portout.TokenPurposeChangePassword},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := testClaims()
+			claims.Purpose = tc.purpose
+
+			engine := gin.New()
+			engine.GET("/x", JWTAuthMiddlewareAllowPasswordChange(
+				stubTokenParser{claims: claims},
+				stubTokenDenylist{},
+				stubTokenVersions{},
+			), func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			rec := serve(engine, "token")
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+		})
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsUnknownPurpose(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	claims := testClaims()
+	claims.Purpose = "unknown"
+
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddlewareAllowPasswordChange(
+		stubTokenParser{claims: claims},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+	), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "token")
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)

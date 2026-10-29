@@ -22,7 +22,7 @@ func (r *AuthenticationRepository) FindCredentialsByUsername(ctx context.Context
 	var userModel model.UserModel
 
 	err := r.db.WithContext(ctx).
-		Select("id", "password_hash").
+		Select("id", "password_hash", "temp_password_expires_at").
 		Where("username = ? AND is_active = ?", username, true).
 		First(&userModel).Error
 	if err != nil {
@@ -33,7 +33,8 @@ func (r *AuthenticationRepository) FindCredentialsByUsername(ctx context.Context
 	}
 
 	return &portout.Credentials{
-		ID:           userModel.ID,
-		PasswordHash: userModel.PasswordHash,
+		ID:                    userModel.ID,
+		PasswordHash:          userModel.PasswordHash,
+		TempPasswordExpiresAt: userModel.TempPasswordExpiresAt,
 	}, nil
 }

@@ -57,16 +57,22 @@ func (s *stubPasswordHasher) Compare(hashed, plain string) error {
 }
 
 type stubJWTService struct {
-	generatedFor uint64
-	generatedVer int
-	generations  int
-	tokenClaims  *portout.TokenClaims
-	parseErr     error
+	generatedFor     uint64
+	generatedVer     int
+	generatedPurpose string
+	generations      int
+	tokenClaims      *portout.TokenClaims
+	parseErr         error
 }
 
 func (s *stubJWTService) GenerateToken(userID uint64, tokenVersion int) (string, error) {
+	return s.GenerateTokenWithPurpose(userID, tokenVersion, portout.TokenPurposeAccess)
+}
+
+func (s *stubJWTService) GenerateTokenWithPurpose(userID uint64, tokenVersion int, purpose string) (string, error) {
 	s.generatedFor = userID
 	s.generatedVer = tokenVersion
+	s.generatedPurpose = purpose
 	s.generations++
 
 	return "generated-token", nil
@@ -206,7 +212,7 @@ func newAuthUseCase(finder *stubCredentialsFinder, hasher *stubPasswordHasher, j
 	sessions := &stubSessionRegistry{}
 	tokenVer := &stubTokenVersionManager{}
 
-	return NewAuthenticationUseCase(finder, hasher, jwt, denylist, sessions, tokenVer)
+	return NewAuthenticationUseCase(finder, &stubUserRepository{}, hasher, jwt, denylist, sessions, tokenVer)
 }
 
 func TestAuthenticationUseCaseRejectsInvalidCredentials(t *testing.T) {
@@ -318,6 +324,78 @@ func TestAuthenticationUseCaseAuthenticatesActiveUser(t *testing.T) {
 	if hasher.comparedHash != validHash {
 		t.Fatalf("expected comparison against the stored hash, got %q", hasher.comparedHash)
 	}
+
+	if jwt.generatedPurpose != portout.TokenPurposeAccess {
+		t.Fatalf("purpose = %q, want %q", jwt.generatedPurpose, portout.TokenPurposeAccess)
+	}
+}
+
+func TestAuthenticationUseCaseIssuesChangePasswordTokenForTemporaryPassword(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "temporary-password"
+	)
+
+	expiresAt := time.Now().Add(time.Hour)
+	finder := &stubCredentialsFinder{
+		credentials: &portout.Credentials{
+			ID:                    42,
+			PasswordHash:          validHash,
+			TempPasswordExpiresAt: &expiresAt,
+		},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{}
+
+	uc := newAuthUseCase(finder, hasher, jwt)
+
+	if _, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
+		Username: "john.doe",
+		Password: plain,
+	}); err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+
+	if jwt.generatedPurpose != portout.TokenPurposeChangePassword {
+		t.Fatalf("purpose = %q, want %q", jwt.generatedPurpose, portout.TokenPurposeChangePassword)
+	}
+}
+
+func TestAuthenticationUseCaseRejectsExpiredTemporaryPassword(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "temporary-password"
+	)
+
+	expiresAt := time.Now().Add(-time.Minute)
+	finder := &stubCredentialsFinder{
+		credentials: &portout.Credentials{
+			ID:                    42,
+			PasswordHash:          validHash,
+			TempPasswordExpiresAt: &expiresAt,
+		},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{}
+
+	uc := newAuthUseCase(finder, hasher, jwt)
+
+	output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
+		Username: "john.doe",
+		Password: plain,
+	})
+
+	if !errors.Is(err, domainerr.ErrTempPasswordExpired) {
+		t.Fatalf("error = %v, want ErrTempPasswordExpired", err)
+	}
+
+	if output != nil {
+		t.Fatalf("expected no output, got %+v", output)
+	}
+
+	if jwt.generations != 0 {
+		t.Fatalf("expected no token to be generated, got %d", jwt.generations)
+	}
 }
 
 func TestAuthenticationUseCaseRejectsInvalidPasswordFormat(t *testing.T) {
@@ -405,7 +483,7 @@ func TestAuthenticationRegistersSessionWithTokenVersion(t *testing.T) {
 	sessions := &stubSessionRegistry{}
 	versions := &stubTokenVersionManager{version: 4}
 
-	uc := NewAuthenticationUseCase(finder, hasher, jwt, denylist, sessions, versions)
+	uc := NewAuthenticationUseCase(finder, &stubUserRepository{}, hasher, jwt, denylist, sessions, versions)
 
 	output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{
 		Username:  "john.doe",
@@ -446,7 +524,7 @@ func TestRevokeTokenDeniesByJTIAndRemovesSession(t *testing.T) {
 	denylist := &stubDenylist{}
 	sessions := &stubSessionRegistry{}
 
-	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubPasswordHasher{}, jwt, denylist, sessions, &stubTokenVersionManager{})
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubUserRepository{}, &stubPasswordHasher{}, jwt, denylist, sessions, &stubTokenVersionManager{})
 
 	if err := uc.RevokeToken(context.Background(), "some-token"); err != nil {
 		t.Fatalf("RevokeToken: %v", err)
@@ -467,7 +545,7 @@ func TestRevokeTokenRejectsUnparseableToken(t *testing.T) {
 	jwt := &stubJWTService{parseErr: errors.New("bad token")}
 	denylist := &stubDenylist{}
 
-	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubPasswordHasher{}, jwt, denylist, &stubSessionRegistry{}, &stubTokenVersionManager{})
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubUserRepository{}, &stubPasswordHasher{}, jwt, denylist, &stubSessionRegistry{}, &stubTokenVersionManager{})
 
 	err := uc.RevokeToken(context.Background(), "broken")
 
@@ -488,7 +566,7 @@ func TestLogoutIsIdempotentForRevokedToken(t *testing.T) {
 	denylist := &stubDenylist{}
 	sessions := &stubSessionRegistry{}
 
-	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubPasswordHasher{}, jwt, denylist, sessions, &stubTokenVersionManager{})
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubUserRepository{}, &stubPasswordHasher{}, jwt, denylist, sessions, &stubTokenVersionManager{})
 
 	if err := uc.Logout(context.Background(), "token"); err != nil {
 		t.Fatalf("first Logout: %v", err)
@@ -506,7 +584,7 @@ func TestRevokeAllUserTokensBumpsVersionAndClearsSessions(t *testing.T) {
 	versions := &stubTokenVersionManager{}
 	sessions := &stubSessionRegistry{}
 
-	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubPasswordHasher{}, &stubJWTService{}, &stubDenylist{}, sessions, versions)
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, &stubUserRepository{}, &stubPasswordHasher{}, &stubJWTService{}, &stubDenylist{}, sessions, versions)
 
 	if err := uc.RevokeAllUserTokens(context.Background(), 42); err != nil {
 		t.Fatalf("RevokeAllUserTokens: %v", err)
@@ -517,5 +595,117 @@ func TestRevokeAllUserTokensBumpsVersionAndClearsSessions(t *testing.T) {
 	}
 	if len(sessions.removedAll) != 1 || sessions.removedAll[0] != 42 {
 		t.Fatalf("removedAll = %v, want [42]", sessions.removedAll)
+	}
+}
+
+func TestChangePasswordRejectsExpiredTemporaryPassword(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "current-password"
+	)
+
+	expiresAt := time.Now().Add(-time.Minute)
+	repo := &stubUserRepository{
+		credentials: &portout.Credentials{
+			ID:                    42,
+			PasswordHash:          validHash,
+			TempPasswordExpiresAt: &expiresAt,
+		},
+	}
+	versions := &stubTokenVersionManager{}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, repo, &stubPasswordHasher{hash: validHash, expectedPlain: plain}, &stubJWTService{}, &stubDenylist{}, &stubSessionRegistry{}, versions)
+
+	err := uc.ChangePassword(context.Background(), dto.ChangePasswordInput{
+		UserID:          42,
+		TokenPurpose:    portout.TokenPurposeChangePassword,
+		CurrentPassword: plain,
+		NewPassword:     "new-password",
+	})
+	if !errors.Is(err, domainerr.ErrTempPasswordExpired) {
+		t.Fatalf("error = %v, want ErrTempPasswordExpired", err)
+	}
+
+	if repo.updatePasswordCalls != 0 || versions.increase != 0 {
+		t.Fatalf("expected no update or revocation, got %d updates and %d increments", repo.updatePasswordCalls, versions.increase)
+	}
+}
+
+func TestChangePasswordWithTemporaryPasswordUpdatesAndRevokes(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "current-password"
+	)
+
+	expiresAt := time.Now().Add(time.Hour)
+	repo := &stubUserRepository{
+		credentials: &portout.Credentials{
+			ID:                    42,
+			PasswordHash:          validHash,
+			TempPasswordExpiresAt: &expiresAt,
+		},
+	}
+	versions := &stubTokenVersionManager{}
+	sessions := &stubSessionRegistry{}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, repo, &stubPasswordHasher{hash: validHash, expectedPlain: plain}, &stubJWTService{}, &stubDenylist{}, sessions, versions)
+
+	if err := uc.ChangePassword(context.Background(), dto.ChangePasswordInput{
+		UserID:          42,
+		TokenPurpose:    portout.TokenPurposeChangePassword,
+		CurrentPassword: plain,
+		NewPassword:     "new-password",
+	}); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+
+	if repo.updatePasswordCalls != 1 || repo.updatedPasswordID != 42 || repo.updatedPasswordHash != validHash {
+		t.Fatalf("unexpected password update: calls=%d id=%d hash=%q", repo.updatePasswordCalls, repo.updatedPasswordID, repo.updatedPasswordHash)
+	}
+
+	if versions.increase != 1 || len(sessions.removedAll) != 1 || sessions.removedAll[0] != 42 {
+		t.Fatalf("expected tokens to be revoked, got %d increments and %v removals", versions.increase, sessions.removedAll)
+	}
+}
+
+func TestChangePasswordWithAccessTokenRequiresCurrentPassword(t *testing.T) {
+	const validHash = "$2a$12$validhash"
+
+	repo := &stubUserRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: validHash},
+	}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, repo, &stubPasswordHasher{hash: validHash, expectedPlain: "correct-password"}, &stubJWTService{}, &stubDenylist{}, &stubSessionRegistry{}, &stubTokenVersionManager{})
+
+	err := uc.ChangePassword(context.Background(), dto.ChangePasswordInput{
+		UserID:          42,
+		TokenPurpose:    portout.TokenPurposeAccess,
+		CurrentPassword: "wrong-password",
+		NewPassword:     "new-password",
+	})
+	if !errors.Is(err, domainerr.ErrInvalidCredentials) {
+		t.Fatalf("error = %v, want ErrInvalidCredentials", err)
+	}
+
+	if repo.updatePasswordCalls != 0 {
+		t.Fatalf("expected no password update, got %d", repo.updatePasswordCalls)
+	}
+}
+
+func TestChangePasswordRejectsUnknownPurpose(t *testing.T) {
+	repo := &stubUserRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: "$2a$12$validhash"},
+	}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsFinder{}, repo, &stubPasswordHasher{}, &stubJWTService{}, &stubDenylist{}, &stubSessionRegistry{}, &stubTokenVersionManager{})
+
+	err := uc.ChangePassword(context.Background(), dto.ChangePasswordInput{
+		UserID:          42,
+		TokenPurpose:    "unknown",
+		CurrentPassword: "current-password",
+		NewPassword:     "new-password",
+	})
+	if !errors.Is(err, domainerr.ErrChangePasswordNotAllowed) {
+		t.Fatalf("error = %v, want ErrChangePasswordNotAllowed", err)
 	}
 }

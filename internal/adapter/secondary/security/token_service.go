@@ -15,7 +15,8 @@ import (
 // version used to invalidate every token of a user at once.
 type tokenClaims struct {
 	jwt.RegisteredClaims
-	TokenVersion int `json:"tv"`
+	TokenVersion int    `json:"tv"`
+	Purpose      string `json:"purpose,omitempty"`
 }
 
 type jwtService struct {
@@ -38,12 +39,23 @@ func (s *jwtService) ExpireSeconds() int64 {
 // the "tv" claim; incrementing the stored version invalidates the token without
 // having to track it individually.
 func (s *jwtService) GenerateToken(id uint64, tokenVersion int) (string, error) {
+	return s.GenerateTokenWithPurpose(id, tokenVersion, portout.TokenPurposeAccess)
+}
+
+// GenerateTokenWithPurpose mints an access token for the user with the given
+// purpose. An empty purpose is normalized to access, which keeps callers that
+// predate purposes working without special cases.
+func (s *jwtService) GenerateTokenWithPurpose(id uint64, tokenVersion int, purpose string) (string, error) {
+	if purpose == "" {
+		purpose = portout.TokenPurposeAccess
+	}
 	now := time.Now()
 	expiresAt := now.Add(s.expiration)
 	convertedUserID := strconv.FormatUint(id, 10)
 
 	claims := tokenClaims{
 		TokenVersion: tokenVersion,
+		Purpose:      purpose,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			Subject:   convertedUserID,
@@ -62,8 +74,9 @@ func (s *jwtService) GenerateToken(id uint64, tokenVersion int) (string, error) 
 }
 
 // ParseClaims validates the signature and the registered time claims and
-// returns the data needed to manage the token (jti, subject, expiration and
-// version).
+// returns the data needed to manage the token (jti, subject, purpose,
+// expiration and version). Tokens without a purpose claim are read as access
+// tokens for backward compatibility.
 func (s *jwtService) ParseClaims(tokenString string) (*portout.TokenClaims, error) {
 	claims := &tokenClaims{}
 
@@ -93,10 +106,16 @@ func (s *jwtService) ParseClaims(tokenString string) (*portout.TokenClaims, erro
 		return nil, errors.New("invalid token time claims")
 	}
 
+	purpose := claims.Purpose
+	if purpose == "" {
+		purpose = portout.TokenPurposeAccess
+	}
+
 	return &portout.TokenClaims{
 		JTI:       claims.ID,
 		Subject:   claims.Subject,
 		TokenVer:  claims.TokenVersion,
+		Purpose:   purpose,
 		IssuedAt:  claims.IssuedAt.Time,
 		ExpiresAt: claims.ExpiresAt.Time,
 	}, nil

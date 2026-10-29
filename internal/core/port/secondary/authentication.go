@@ -1,15 +1,19 @@
 package secondary
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Credentials carries the minimum data required to authenticate a user: the
-// user ID and the stored password hash. Keeping the hash in the port (instead
-// of a generic user output DTO) confines it to the authentication flow and
-// prevents it from leaking through a read model that could be serialized or
-// logged by mistake.
+// user ID, the stored password hash and the temporary password expiration, when
+// one is active. Keeping this data in the port (instead of a generic user output
+// DTO) confines the hash to the authentication flow and prevents it from leaking
+// through a read model that could be serialized or logged by mistake.
 type Credentials struct {
-	ID           uint64
-	PasswordHash string
+	ID                    uint64
+	PasswordHash          string
+	TempPasswordExpiresAt *time.Time
 }
 
 // AuthenticationRepository is a narrow read port dedicated to the authentication
@@ -34,9 +38,11 @@ type PasswordHasher interface {
 
 // TokenIssuer mints access tokens for a given subject. It is the capability
 // required by the authentication flow. The token version is embedded in the
-// token so a later increment invalidates every token issued before it.
+// token so a later increment invalidates every token issued before it, and the
+// purpose limits where the token can be used.
 type TokenIssuer interface {
 	GenerateToken(userID uint64, tokenVersion int) (string, error)
+	GenerateTokenWithPurpose(userID uint64, tokenVersion int, purpose string) (string, error)
 	ExpireSeconds() int64
 }
 

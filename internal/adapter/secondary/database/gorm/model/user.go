@@ -23,15 +23,16 @@ import (
 // The is_active flag is deliberately not part of the predicate: a deactivated
 // account still holds its identity, only a removed one frees it.
 type UserModel struct {
-	ID           uint64 `gorm:"primaryKey"`
-	Name         string `gorm:"not null;size:100"`
-	Username     string `gorm:"uniqueIndex:uniq_user_username,where:deleted_at IS NULL;not null;size:60"`
-	Email        string `gorm:"uniqueIndex:uniq_user_email,where:deleted_at IS NULL;not null;size:254"`
-	PasswordHash string `gorm:"not null;"`
-	IsActive     bool   `gorm:"default:true"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	DeletedAt    gorm.DeletedAt `gorm:"index"`
+	ID                    uint64     `gorm:"primaryKey"`
+	Name                  string     `gorm:"not null;size:100"`
+	Username              string     `gorm:"uniqueIndex:uniq_user_username,where:deleted_at IS NULL;not null;size:60"`
+	Email                 string     `gorm:"uniqueIndex:uniq_user_email,where:deleted_at IS NULL;not null;size:254"`
+	PasswordHash          string     `gorm:"not null;"`
+	TempPasswordExpiresAt *time.Time `gorm:"column:temp_password_expires_at"`
+	IsActive              bool       `gorm:"default:true"`
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	DeletedAt             gorm.DeletedAt `gorm:"index"`
 }
 
 func (UserModel) TableName() string {

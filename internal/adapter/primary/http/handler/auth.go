@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/request"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/response"
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
@@ -52,7 +53,7 @@ func (h *AuthHandler) Authenticate(ctx *gin.Context) {
 
 	output, err := h.usecase.Authenticate(ctx.Request.Context(), input)
 	if err != nil {
-		if errors.Is(err, domainerr.ErrInvalidCredentials) {
+		if errors.Is(err, domainerr.ErrInvalidCredentials) || errors.Is(err, domainerr.ErrTempPasswordExpired) {
 			ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
 				Error: "invalid credentials",
 			})
@@ -101,6 +102,82 @@ func (h *AuthHandler) Logout(ctx *gin.Context) {
 			return
 		}
 
+		_ = ctx.Error(err)
+		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
+			Error: "internal server error",
+		})
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// ChangePassword godoc
+// @Summary      Change password
+// @Description  Changes the user's password. Accepts a normal access token or a token with purpose change_password (issued after login with a temporary password). After success all sessions are revoked.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      request.ChangePasswordBodyRequest  true  "Password change"
+// @Success      204
+// @Failure      400  {object}  response.ErrorResponse
+// @Failure      401  {object}  response.ErrorResponse
+// @Failure      403  {object}  response.ErrorResponse
+// @Failure      500  {object}  response.ErrorResponse
+// @Router       /auth/change-password [post]
+func (h *AuthHandler) ChangePassword(ctx *gin.Context) {
+	var body request.ChangePasswordBodyRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+			Error: "invalid request body",
+		})
+		return
+	}
+
+	userID, ok := middleware.GetUserID(ctx)
+	if !ok {
+		ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
+			Error: "unauthorized",
+		})
+		return
+	}
+
+	purpose, _ := middleware.GetTokenPurpose(ctx)
+
+	input := dto.ChangePasswordInput{
+		UserID:          userID,
+		TokenPurpose:    purpose,
+		CurrentPassword: body.CurrentPassword,
+		NewPassword:     body.NewPassword,
+	}
+
+	if err := h.usecase.ChangePassword(ctx.Request.Context(), input); err != nil {
+		switch {
+		case errors.Is(err, domainerr.ErrInvalidPassword):
+			ctx.JSON(http.StatusBadRequest, response.ErrorResponse{
+				Error: "invalid password",
+			})
+			return
+
+		case errors.Is(err, domainerr.ErrInvalidCredentials):
+			ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
+				Error: "invalid credentials",
+			})
+			return
+
+		case errors.Is(err, domainerr.ErrTempPasswordExpired):
+			ctx.JSON(http.StatusUnauthorized, response.ErrorResponse{
+				Error: "temporary password expired",
+			})
+			return
+
+		case errors.Is(err, domainerr.ErrChangePasswordNotAllowed):
+			ctx.JSON(http.StatusForbidden, response.ErrorResponse{
+				Error: "change password not allowed",
+			})
+			return
+		}
 		_ = ctx.Error(err)
 		ctx.JSON(http.StatusInternalServerError, response.ErrorResponse{
 			Error: "internal server error",

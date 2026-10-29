@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"time"
 
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
 	"github.com/PedroTamburini/hexago/internal/core/domain/validator"
@@ -23,6 +24,7 @@ const (
 
 type authenticationUseCase struct {
 	userCredentialsFinder portout.AuthenticationRepository
+	userRepo              portout.UserRepository
 	hasher                portout.PasswordHasher
 	tokens                portout.TokenService
 	denylist              portout.TokenDenylist
@@ -31,8 +33,12 @@ type authenticationUseCase struct {
 	dummyHash             string
 }
 
+// NewAuthenticationUseCase builds the authentication use case. userRepo is used
+// only by ChangePassword, which needs to read and update credentials without
+// going through the broader user management flow.
 func NewAuthenticationUseCase(
 	userCredentialsFinder portout.AuthenticationRepository,
+	userRepo portout.UserRepository,
 	hasher portout.PasswordHasher,
 	tokens portout.TokenService,
 	denylist portout.TokenDenylist,
@@ -47,6 +53,7 @@ func NewAuthenticationUseCase(
 
 	return &authenticationUseCase{
 		userCredentialsFinder: userCredentialsFinder,
+		userRepo:              userRepo,
 		hasher:                hasher,
 		tokens:                tokens,
 		denylist:              denylist,
@@ -56,6 +63,10 @@ func NewAuthenticationUseCase(
 	}
 }
 
+// Authenticate verifies the credentials and issues a token. When the account is
+// using a temporary password, the token is restricted to the change-password
+// endpoint; an expired temporary password blocks the login instead of issuing a
+// token that could never be used to choose a new password.
 func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.AuthenticateInput) (*dto.AuthenticateOutput, error) {
 	// Validated before touching the repository: a malformed password can never
 	// match any account, and rejecting it here keeps the finder (and therefore
@@ -84,7 +95,16 @@ func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.Auth
 		return nil, err
 	}
 
-	token, err := u.tokens.GenerateToken(credentials.ID, tokenVersion)
+	purpose := portout.TokenPurposeAccess
+	if credentials.TempPasswordExpiresAt != nil {
+		if !credentials.TempPasswordExpiresAt.After(time.Now()) {
+			return nil, domainerr.ErrTempPasswordExpired
+		}
+
+		purpose = portout.TokenPurposeChangePassword
+	}
+
+	token, err := u.tokens.GenerateTokenWithPurpose(credentials.ID, tokenVersion, purpose)
 	if err != nil {
 		return nil, err
 	}
@@ -144,4 +164,51 @@ func (u *authenticationUseCase) RevokeAllUserTokens(ctx context.Context, userID 
 	}
 
 	return u.sessions.RemoveAllByUserID(ctx, userID)
+}
+
+// ChangePassword updates the password after validating the current one. The two
+// allowed purposes represent the two entry points: an access token for a normal
+// password change, and a change_password token for the flow started by an
+// administrative reset, which requires a live temporary password. Every
+// successful change revokes all tokens because the previous credentials must
+// stop working immediately.
+func (u *authenticationUseCase) ChangePassword(ctx context.Context, input dto.ChangePasswordInput) error {
+	if !validator.IsValidPassword(input.NewPassword) {
+		return domainerr.ErrInvalidPassword
+	}
+
+	credentials, err := u.userRepo.FindCredentialsByID(ctx, input.UserID)
+	if err != nil {
+		return err
+	}
+
+	switch input.TokenPurpose {
+	case portout.TokenPurposeChangePassword:
+		if credentials.TempPasswordExpiresAt == nil {
+			return domainerr.ErrChangePasswordNotAllowed
+		}
+
+		if time.Now().After(*credentials.TempPasswordExpiresAt) {
+			return domainerr.ErrTempPasswordExpired
+		}
+
+	case portout.TokenPurposeAccess:
+	default:
+		return domainerr.ErrChangePasswordNotAllowed
+	}
+
+	if err := u.hasher.Compare(credentials.PasswordHash, input.CurrentPassword); err != nil {
+		return domainerr.ErrInvalidCredentials
+	}
+
+	newHash, err := u.hasher.Hash(input.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	if err := u.userRepo.UpdatePasswordAndClearTemp(ctx, input.UserID, newHash); err != nil {
+		return err
+	}
+
+	return u.RevokeAllUserTokens(ctx, input.UserID)
 }

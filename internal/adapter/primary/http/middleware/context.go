@@ -9,9 +9,10 @@ import "github.com/gin-gonic/gin"
 type contextKey string
 
 const (
-	userIDKey    contextKey = "user_id"
-	tokenJTIKey  contextKey = "token_jti"
-	requestIDKey contextKey = "request_id"
+	userIDKey       contextKey = "user_id"
+	tokenJTIKey     contextKey = "token_jti"
+	tokenPurposeKey contextKey = "token_purpose"
+	requestIDKey    contextKey = "request_id"
 )
 
 func setUserID(c *gin.Context, userID uint64) {
@@ -36,6 +37,10 @@ func setTokenJTI(c *gin.Context, jti string) {
 	c.Set(string(tokenJTIKey), jti)
 }
 
+func setTokenPurpose(c *gin.Context, purpose string) {
+	c.Set(string(tokenPurposeKey), purpose)
+}
+
 // GetTokenJTI returns the jti of the token that authenticated the request. It
 // lets handlers distinguish the current session from the others when listing
 // them.
@@ -47,6 +52,17 @@ func GetTokenJTI(c *gin.Context) (string, bool) {
 
 	jti, ok := value.(string)
 	return jti, ok
+}
+
+// GetTokenPurpose returns the purpose of the token that authenticated the request.
+func GetTokenPurpose(c *gin.Context) (string, bool) {
+	value, exists := c.Get(string(tokenPurposeKey))
+	if !exists {
+		return "", false
+	}
+
+	purpose, ok := value.(string)
+	return purpose, ok
 }
 
 func setRequestID(c *gin.Context, requestID string) {
