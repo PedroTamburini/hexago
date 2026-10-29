@@ -120,6 +120,25 @@ sessions. Three endpoints manage them, all guarded by RBAC:
 The seed grants the new permissions to the admin role on boot, so an existing
 installation picks them up without a manual migration.
 
+### Account status, password reset and roles
+
+The administrative endpoints below change an account without requiring its
+current password. All of them are guarded by RBAC and revoke the affected
+user's tokens when the change must take effect immediately.
+
+| Endpoint | Permission | Effect |
+| --- | --- | --- |
+| `PATCH /api/v1/users/{id}/status` | `users:status` | Activates or deactivates an account. Deactivating revokes every token of the user; an administrator cannot deactivate their own account or the last active administrator. |
+| `POST /api/v1/users/{id}/password/reset` | `users:reset_password` | Generates a temporary password, returns it once in the response and revokes every existing token. |
+| `POST /api/v1/users/{id}/roles/{role_id}` | `roles:manage` | Assigns a role by ID. Repeating the same assignment answers `409 role already assigned`. |
+| `DELETE /api/v1/users/{id}/roles/{role_id}` | `roles:manage` | Removes a role by ID. Removing `admin` from the last active administrator is forbidden. |
+
+A temporary password is valid for 24 hours. Logging in with it returns a token
+whose only allowed use is `POST /api/v1/auth/change-password`, which replaces the
+password and clears the temporary one. An expired temporary password is rejected
+at login as `401 invalid credentials`, and every successful password change
+revokes all tokens issued before it.
+
 ### Redis keys and fallback
 
 Denylist, sessions and token versions share the Redis instance used by the rate
