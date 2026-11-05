@@ -38,10 +38,6 @@ type SetUserStatusBodyRequest struct {
 	IsActive *bool `json:"is_active" binding:"required"`
 }
 
-type ResetPasswordUriRequest struct {
-	ID uint64 `uri:"id" binding:"required"`
-}
-
 type AssignRoleUriRequest struct {
 	ID     uint64 `uri:"id" binding:"required"`
 	RoleID uint64 `uri:"role_id" binding:"required"`

@@ -126,9 +126,11 @@ func wire(
 	hasher portout.PasswordHasher,
 	tokens portout.TokenService,
 ) routes.Dependencies {
-	// Repositories (secondary adapters)
+	// Repositories (secondary adapters). Each one owns a single capability:
+	// profile CRUD, password credentials and role assignments.
 	userRepository := repository.NewUserRepository(db.DB)
-	authenticationRepository := repository.NewAuthenticationRepository(db.DB)
+	credentialsRepository := repository.NewCredentialsRepository(db.DB)
+	roleRepository := repository.NewRoleRepository(db.DB)
 	permissionChecker := repository.NewAuthorizationRepository(db.DB)
 
 	// Token management (denylist, session registry and token versions). They
@@ -139,8 +141,7 @@ func wire(
 
 	// Use cases
 	authenticationUseCase := usecase.NewAuthenticationUseCase(
-		authenticationRepository,
-		userRepository,
+		credentialsRepository,
 		hasher,
 		tokens,
 		denylist,
@@ -148,10 +149,21 @@ func wire(
 		tokenVersions,
 	)
 
-	// The user use case owns status changes and password resets, so it receives
-	// the token stores needed to revoke every session of the affected user.
+	// The password use case owns both the self-service change and the
+	// administrative reset, and revokes every session of the affected user.
+	passwordUseCase := usecase.NewPasswordUseCase(
+		credentialsRepository,
+		hasher,
+		tokenVersions,
+		sessions,
+	)
+
+	// The user use case owns the profile lifecycle, status changes and role
+	// assignments. Roles live in their own repository because they answer the
+	// authorization questions the business rules depend on.
 	userUseCase := usecase.NewUserUseCase(
 		userRepository,
+		roleRepository,
 		hasher,
 		tokenVersions,
 		sessions,
@@ -165,9 +177,10 @@ func wire(
 
 	// Primary adapters (handlers)
 	handlers := &routes.Handlers{
-		User:    handler.NewUserHandler(userUseCase),
-		Auth:    handler.NewAuthHandler(authenticationUseCase),
-		Session: handler.NewSessionHandler(sessionManagementUseCase),
+		User:           handler.NewUserHandler(userUseCase),
+		Authentication: handler.NewAuthenticationHandler(authenticationUseCase),
+		Password:       handler.NewPasswordHandler(passwordUseCase),
+		Session:        handler.NewSessionHandler(sessionManagementUseCase),
 	}
 
 	return routes.Dependencies{

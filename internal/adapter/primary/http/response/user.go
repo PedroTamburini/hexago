@@ -35,7 +35,3 @@ type SetUserStatusResponse struct {
 	ID       uint64 `json:"id"`
 	IsActive bool   `json:"is_active"`
 }
-
-type ResetPasswordResponse struct {
-	TemporaryPassword string `json:"temporary_password"`
-}

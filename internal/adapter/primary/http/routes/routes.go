@@ -46,9 +46,10 @@ type RateLimiters struct {
 
 // Handlers groups the primary adapters (HTTP handlers) bound to the routes.
 type Handlers struct {
-	User    *handler.UserHandler
-	Auth    *handler.AuthHandler
-	Session *handler.SessionHandler
+	User           *handler.UserHandler
+	Authentication *handler.AuthenticationHandler
+	Password       *handler.PasswordHandler
+	Session        *handler.SessionHandler
 }
 
 // Register installs the global middleware and the route tree on the engine. It
@@ -77,13 +78,13 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 	{
 		v1.POST("/auth",
 			middleware.RateLimit(deps.RateLimit.Auth, middleware.KeyByIP),
-			deps.Handlers.Auth.Authenticate,
+			deps.Handlers.Authentication.Authenticate,
 		)
 
 		v1.POST("/auth/logout",
 			authenticate,
 			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),
-			deps.Handlers.Auth.Logout,
+			deps.Handlers.Authentication.Logout,
 		)
 
 		// This route accepts the restricted token issued after a login with a
@@ -92,7 +93,7 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		v1.POST("/auth/change-password",
 			middleware.JWTAuthMiddlewareAllowPasswordChange(deps.TokenParser, deps.Denylist, deps.TokenVersions),
 			middleware.RateLimit(deps.RateLimit.User, middleware.KeyByUserID),
-			deps.Handlers.Auth.ChangePassword,
+			deps.Handlers.Password.ChangePassword,
 		)
 
 		users := v1.Group("/users")
@@ -109,7 +110,7 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		users.PUT("/:id", guard(deps, permission.UsersUpdate), deps.Handlers.User.Update)
 		users.DELETE("/:id", guard(deps, permission.UsersDelete), deps.Handlers.User.Delete)
 		users.PATCH("/:id/status", guard(deps, permission.UsersStatus), deps.Handlers.User.SetStatus)
-		users.POST("/:id/password/reset", guard(deps, permission.UsersResetPassword), deps.Handlers.User.ResetPassword)
+		users.POST("/:id/password/reset", guard(deps, permission.UsersResetPassword), deps.Handlers.Password.ResetPassword)
 		users.POST("/:id/roles/:role_id", guard(deps, permission.RolesManage), deps.Handlers.User.AssignRole)
 		users.DELETE("/:id/roles/:role_id", guard(deps, permission.RolesManage), deps.Handlers.User.RemoveRole)
 
