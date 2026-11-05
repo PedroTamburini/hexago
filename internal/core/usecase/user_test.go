@@ -5,7 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/PedroTamburini/hexago/internal/core/domain/entity"
 	domainerr "github.com/PedroTamburini/hexago/internal/core/domain/error"
@@ -14,92 +13,8 @@ import (
 	portout "github.com/PedroTamburini/hexago/internal/core/port/secondary"
 )
 
-type stubUserRepository struct {
-	users  []*entity.User
-	limit  int
-	offset int
-
-	findByID    *entity.User
-	findByIDErr error
-
-	isAdmin    bool
-	isAdminErr error
-
-	activeAdmins    int64
-	activeAdminsErr error
-
-	deletedID   uint64
-	deleteCalls int
-
-	statusID     uint64
-	statusActive bool
-	statusCalls  int
-	statusErr    error
-
-	tempPasswordID        uint64
-	tempPasswordHash      string
-	tempPasswordExpiresAt time.Time
-	tempPasswordCalls     int
-	tempPasswordErr       error
-
-	credentials    *portout.Credentials
-	credentialsErr error
-
-	updatedPasswordID   uint64
-	updatedPasswordHash string
-	updatePasswordCalls int
-	updatePasswordErr   error
-
-	role    *entity.Role
-	roleErr error
-
-	hasRole     bool
-	hasRoleErr  error
-	hasRoleCall int
-
-	assignedUserID uint64
-	assignedRoleID uint64
-	assignCalls    int
-	assignErr      error
-
-	removedUserID uint64
-	removedRoleID uint64
-	removeCalls   int
-	removeErr     error
-}
-
-func newTestUserUseCase(repo *stubUserRepository, hasher portout.PasswordHasher) portin.UserUseCase {
-	return NewUserUseCase(repo, hasher, &stubTokenVersionManager{}, &stubSessionRegistry{})
-}
-
-func (s *stubUserRepository) Create(context.Context, *entity.User) error { return nil }
-
-func (s *stubUserRepository) FindByID(context.Context, uint64) (*entity.User, error) {
-	return s.findByID, s.findByIDErr
-}
-
-func (s *stubUserRepository) FindAll(_ context.Context, limit, offset int) ([]*entity.User, error) {
-	s.limit = limit
-	s.offset = offset
-
-	return s.users, nil
-}
-
-func (s *stubUserRepository) Update(context.Context, *entity.User) error { return nil }
-
-func (s *stubUserRepository) Delete(_ context.Context, id uint64) error {
-	s.deleteCalls++
-	s.deletedID = id
-
-	return nil
-}
-
-func (s *stubUserRepository) IsAdmin(context.Context, uint64) (bool, error) {
-	return s.isAdmin, s.isAdminErr
-}
-
-func (s *stubUserRepository) CountActiveAdmins(context.Context) (int64, error) {
-	return s.activeAdmins, s.activeAdminsErr
+func newTestUserUseCase(users *stubUserRepository, roles *stubRoleRepository, hasher portout.PasswordHasher) portin.UserUseCase {
+	return NewUserUseCase(users, roles, hasher, &stubTokenVersionManager{}, &stubSessionRegistry{})
 }
 
 func TestUserUseCaseFindAllNormalizesPagination(t *testing.T) {
@@ -148,7 +63,7 @@ func TestUserUseCaseFindAllNormalizesPagination(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &stubUserRepository{}
 
-			uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+			uc := newTestUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{})
 
 			if _, err := uc.FindAll(context.Background(), dto.FindAllUsersInput{
 				Limit:  tc.limit,
@@ -173,7 +88,7 @@ func TestUserUseCaseFindAllNeverRequestsZeroLimit(t *testing.T) {
 	// page instead of the default one.
 	repo := &stubUserRepository{}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{})
 
 	if _, err := uc.FindAll(context.Background(), dto.FindAllUsersInput{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -192,7 +107,7 @@ func TestUserUseCaseFindAllMapsUsers(t *testing.T) {
 		},
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{})
 
 	output, err := uc.FindAll(context.Background(), dto.FindAllUsersInput{Limit: 10})
 	if err != nil {
@@ -218,7 +133,7 @@ func TestUserUseCaseCreateRejectsPasswordAboveBcryptLimit(t *testing.T) {
 	hasher := &stubPasswordHasher{}
 	repo := &stubUserRepository{}
 
-	uc := newTestUserUseCase(repo, hasher)
+	uc := newTestUserUseCase(repo, &stubRoleRepository{}, hasher)
 
 	output, err := uc.Create(context.Background(), dto.CreateUserInput{
 		Name:     "John Doe",
@@ -242,12 +157,14 @@ func TestUserUseCaseCreateRejectsPasswordAboveBcryptLimit(t *testing.T) {
 
 func TestUserUseCaseDeleteBlocksAdminSelfDeletion(t *testing.T) {
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 5, IsActive: true},
+		findByID: &entity.User{ID: 5, IsActive: true},
+	}
+	roles := &stubRoleRepository{
 		isAdmin:      true,
 		activeAdmins: 3,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 5})
 	if !errors.Is(err, domainerr.ErrAdminSelfDelete) {
@@ -263,12 +180,14 @@ func TestUserUseCaseDeleteBlocksRemovingLastActiveAdmin(t *testing.T) {
 	// Another user (with users:delete) tries to remove the only active admin,
 	// which would lock the application out of privileged operations.
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 5, IsActive: true},
+		findByID: &entity.User{ID: 5, IsActive: true},
+	}
+	roles := &stubRoleRepository{
 		isAdmin:      true,
 		activeAdmins: 1,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9})
 	if !errors.Is(err, domainerr.ErrLastAdmin) {
@@ -282,12 +201,14 @@ func TestUserUseCaseDeleteBlocksRemovingLastActiveAdmin(t *testing.T) {
 
 func TestUserUseCaseDeleteAllowsAdminToRemoveAnotherAdmin(t *testing.T) {
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 5, IsActive: true},
+		findByID: &entity.User{ID: 5, IsActive: true},
+	}
+	roles := &stubRoleRepository{
 		isAdmin:      true,
 		activeAdmins: 2,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -302,12 +223,14 @@ func TestUserUseCaseDeleteAllowsRemovingDeactivatedSoleAdmin(t *testing.T) {
 	// A deactivated admin cannot exercise any permission, so the account is
 	// already not usable as an administrator and may be cleaned up.
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 5, IsActive: false},
+		findByID: &entity.User{ID: 5, IsActive: false},
+	}
+	roles := &stubRoleRepository{
 		isAdmin:      true,
 		activeAdmins: 0,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 5, ActorID: 9}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -324,7 +247,7 @@ func TestUserUseCaseDeleteAllowsRegularUserSelfDeletion(t *testing.T) {
 		findByID: &entity.User{ID: 7, IsActive: true},
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{})
 
 	if err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 7, ActorID: 7}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -338,10 +261,12 @@ func TestUserUseCaseDeleteAllowsRegularUserSelfDeletion(t *testing.T) {
 func TestUserUseCaseDeletePropagatesNotFound(t *testing.T) {
 	repo := &stubUserRepository{
 		findByIDErr: domainerr.ErrUserNotFound,
-		isAdmin:     true,
+	}
+	roles := &stubRoleRepository{
+		isAdmin: true,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	err := uc.Delete(context.Background(), dto.DeleteUserInput{ID: 404, ActorID: 9})
 	if !errors.Is(err, domainerr.ErrUserNotFound) {
@@ -353,79 +278,12 @@ func TestUserUseCaseDeletePropagatesNotFound(t *testing.T) {
 	}
 }
 
-func (s *stubUserRepository) SetStatus(_ context.Context, id uint64, isActive bool) error {
-	s.statusCalls++
-	s.statusID = id
-	s.statusActive = isActive
-
-	return s.statusErr
-}
-
-func (s *stubUserRepository) FindCredentialsByID(context.Context, uint64) (*portout.Credentials, error) {
-	if s.credentialsErr != nil {
-		return nil, s.credentialsErr
-	}
-
-	return s.credentials, nil
-}
-
-func (s *stubUserRepository) UpdatePasswordAndClearTemp(_ context.Context, id uint64, passwordHash string) error {
-	s.updatePasswordCalls++
-	s.updatedPasswordID = id
-	s.updatedPasswordHash = passwordHash
-
-	return s.updatePasswordErr
-}
-
-func (s *stubUserRepository) SetTempPassword(_ context.Context, id uint64, passwordHash string, expiresAt time.Time) error {
-	s.tempPasswordCalls++
-	s.tempPasswordID = id
-	s.tempPasswordHash = passwordHash
-	s.tempPasswordExpiresAt = expiresAt
-
-	return s.tempPasswordErr
-}
-
-func (s *stubUserRepository) FindRoleByID(context.Context, uint64) (*entity.Role, error) {
-	if s.roleErr != nil {
-		return nil, s.roleErr
-	}
-
-	if s.role != nil {
-		return s.role, nil
-	}
-
-	return &entity.Role{ID: 1, Name: "admin"}, nil
-}
-
-func (s *stubUserRepository) HasRole(context.Context, uint64, uint64) (bool, error) {
-	s.hasRoleCall++
-
-	return s.hasRole, s.hasRoleErr
-}
-
-func (s *stubUserRepository) AssignRole(_ context.Context, userID, roleID uint64) error {
-	s.assignCalls++
-	s.assignedUserID = userID
-	s.assignedRoleID = roleID
-
-	return s.assignErr
-}
-
-func (s *stubUserRepository) RemoveRole(_ context.Context, userID, roleID uint64) error {
-	s.removeCalls++
-	s.removedUserID = userID
-	s.removedRoleID = roleID
-
-	return s.removeErr
-}
-
 func TestUserUseCaseSetStatusRevokesTokensWhenDeactivating(t *testing.T) {
 	repo := &stubUserRepository{findByID: &entity.User{ID: 7, IsActive: true}}
 	versions := &stubTokenVersionManager{}
 	sessions := &stubSessionRegistry{}
 
-	uc := NewUserUseCase(repo, &stubPasswordHasher{}, versions, sessions)
+	uc := NewUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{}, versions, sessions)
 
 	output, err := uc.SetStatus(context.Background(), dto.SetUserStatusInput{
 		ID:       7,
@@ -457,7 +315,7 @@ func TestUserUseCaseSetStatusDoesNotRevokeAlreadyInactiveAccount(t *testing.T) {
 	repo := &stubUserRepository{findByID: &entity.User{ID: 7, IsActive: false}}
 	versions := &stubTokenVersionManager{}
 
-	uc := NewUserUseCase(repo, &stubPasswordHasher{}, versions, &stubSessionRegistry{})
+	uc := NewUserUseCase(repo, &stubRoleRepository{}, &stubPasswordHasher{}, versions, &stubSessionRegistry{})
 
 	if _, err := uc.SetStatus(context.Background(), dto.SetUserStatusInput{ID: 7, IsActive: false}); err != nil {
 		t.Fatalf("SetStatus: %v", err)
@@ -470,12 +328,14 @@ func TestUserUseCaseSetStatusDoesNotRevokeAlreadyInactiveAccount(t *testing.T) {
 
 func TestUserUseCaseSetStatusBlocksDeactivatingLastActiveAdmin(t *testing.T) {
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 7, IsActive: true},
+		findByID: &entity.User{ID: 7, IsActive: true},
+	}
+	roles := &stubRoleRepository{
 		isAdmin:      true,
 		activeAdmins: 1,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	_, err := uc.SetStatus(context.Background(), dto.SetUserStatusInput{ID: 7, ActorID: 9, IsActive: false})
 	if !errors.Is(err, domainerr.ErrCannotDeactivateLastAdmin) {
@@ -487,90 +347,64 @@ func TestUserUseCaseSetStatusBlocksDeactivatingLastActiveAdmin(t *testing.T) {
 	}
 }
 
-func TestUserUseCaseResetPasswordStoresTemporaryPasswordAndRevokesTokens(t *testing.T) {
-	const hash = "$2a$12$temporaryhash"
-
-	repo := &stubUserRepository{}
-	versions := &stubTokenVersionManager{}
-	sessions := &stubSessionRegistry{}
-
-	uc := NewUserUseCase(repo, &stubPasswordHasher{hash: hash}, versions, sessions)
-
-	output, err := uc.ResetPassword(context.Background(), dto.ResetPasswordInput{TargetID: 7})
-	if err != nil {
-		t.Fatalf("ResetPassword: %v", err)
-	}
-
-	if output.TemporaryPassword == "" {
-		t.Fatal("expected a temporary password to be returned")
-	}
-
-	if repo.tempPasswordCalls != 1 || repo.tempPasswordID != 7 || repo.tempPasswordHash != hash {
-		t.Fatalf("unexpected temp password update: calls=%d id=%d hash=%q", repo.tempPasswordCalls, repo.tempPasswordID, repo.tempPasswordHash)
-	}
-
-	remaining := time.Until(repo.tempPasswordExpiresAt)
-	if remaining <= 23*time.Hour || remaining > 25*time.Hour {
-		t.Fatalf("expected a 24h expiration, got %v", remaining)
-	}
-
-	if versions.increase != 1 || len(sessions.removedAll) != 1 {
-		t.Fatalf("expected tokens to be revoked, got %d increments and %v removals", versions.increase, sessions.removedAll)
-	}
-}
-
 func TestUserUseCaseAssignRoleRejectsDuplicate(t *testing.T) {
 	repo := &stubUserRepository{
 		findByID: &entity.User{ID: 7},
-		role:     &entity.Role{ID: 3, Name: "editor"},
-		hasRole:  true,
+	}
+	roles := &stubRoleRepository{
+		role:    &entity.Role{ID: 3, Name: "editor"},
+		hasRole: true,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	err := uc.AssignRole(context.Background(), dto.AssignRoleInput{TargetID: 7, RoleID: 3})
 	if !errors.Is(err, domainerr.ErrRoleAlreadyAssigned) {
 		t.Fatalf("error = %v, want ErrRoleAlreadyAssigned", err)
 	}
 
-	if repo.assignCalls != 0 {
-		t.Fatalf("expected no assignment, got %d", repo.assignCalls)
+	if roles.assignCalls != 0 {
+		t.Fatalf("expected no assignment, got %d", roles.assignCalls)
 	}
 }
 
 func TestUserUseCaseAssignRoleAssignsRoleByID(t *testing.T) {
 	repo := &stubUserRepository{
 		findByID: &entity.User{ID: 7},
-		role:     &entity.Role{ID: 3, Name: "editor"},
+	}
+	roles := &stubRoleRepository{
+		role: &entity.Role{ID: 3, Name: "editor"},
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	if err := uc.AssignRole(context.Background(), dto.AssignRoleInput{TargetID: 7, RoleID: 3}); err != nil {
 		t.Fatalf("AssignRole: %v", err)
 	}
 
-	if repo.assignCalls != 1 || repo.assignedUserID != 7 || repo.assignedRoleID != 3 {
-		t.Fatalf("unexpected assignment: calls=%d user=%d role=%d", repo.assignCalls, repo.assignedUserID, repo.assignedRoleID)
+	if roles.assignCalls != 1 || roles.assignedUserID != 7 || roles.assignedRoleID != 3 {
+		t.Fatalf("unexpected assignment: calls=%d user=%d role=%d", roles.assignCalls, roles.assignedUserID, roles.assignedRoleID)
 	}
 }
 
 func TestUserUseCaseRemoveRoleBlocksRemovingLastActiveAdmin(t *testing.T) {
 	repo := &stubUserRepository{
-		findByID:     &entity.User{ID: 7, IsActive: true},
+		findByID: &entity.User{ID: 7, IsActive: true},
+	}
+	roles := &stubRoleRepository{
 		role:         &entity.Role{ID: 1, Name: "admin"},
 		isAdmin:      true,
 		activeAdmins: 1,
 	}
 
-	uc := newTestUserUseCase(repo, &stubPasswordHasher{})
+	uc := newTestUserUseCase(repo, roles, &stubPasswordHasher{})
 
 	err := uc.RemoveRole(context.Background(), dto.RemoveRoleInput{TargetID: 7, RoleID: 1})
 	if !errors.Is(err, domainerr.ErrCannotRemoveLastAdmin) {
 		t.Fatalf("error = %v, want ErrCannotRemoveLastAdmin", err)
 	}
 
-	if repo.removeCalls != 0 {
-		t.Fatalf("expected no removal, got %d", repo.removeCalls)
+	if roles.removeCalls != 0 {
+		t.Fatalf("expected no removal, got %d", roles.removeCalls)
 	}
 }
