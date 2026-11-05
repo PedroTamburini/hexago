@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -147,6 +148,49 @@ func TestLoadConfig(t *testing.T) {
 			name: "accepts a valid admin identity when seeding is enabled",
 			env:  map[string]string{"SEED_ENABLED": "true", "ADMIN_PASSWORD": "AdminPass123"},
 		},
+		{
+			name: "accepts explicit CORS origins",
+			env:  map[string]string{"CORS_ALLOWED_ORIGINS": "https://app.example.com,http://localhost:3000"},
+		},
+		{
+			name:    "rejects an invalid CORS origin",
+			env:     map[string]string{"CORS_ALLOWED_ORIGINS": "app.example.com"},
+			wantErr: "CORS_ALLOWED_ORIGINS",
+		},
+		{
+			name:    "rejects a CORS origin with a path",
+			env:     map[string]string{"CORS_ALLOWED_ORIGINS": "https://app.example.com/api"},
+			wantErr: "CORS_ALLOWED_ORIGINS",
+		},
+		{
+			name:    "rejects wildcard CORS origins with credentials",
+			env:     map[string]string{"CORS_ALLOWED_ORIGINS": "*", "CORS_ALLOW_CREDENTIALS": "true"},
+			wantErr: "CORS_ALLOW_CREDENTIALS",
+		},
+		{
+			name:    "rejects an invalid CORS method",
+			env:     map[string]string{"CORS_ALLOWED_METHODS": "GET,FETCH"},
+			wantErr: "CORS_ALLOWED_METHODS",
+		},
+		{
+			name:    "rejects a negative CORS max age",
+			env:     map[string]string{"CORS_MAX_AGE": "-1h"},
+			wantErr: "CORS_MAX_AGE",
+		},
+		{
+			name:    "rejects production without CORS origins",
+			env:     map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": ""},
+			wantErr: "CORS_ALLOWED_ORIGINS",
+		},
+		{
+			name:    "rejects wildcard CORS origins in production",
+			env:     map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": "*"},
+			wantErr: "CORS_ALLOWED_ORIGINS",
+		},
+		{
+			name: "accepts explicit CORS origins in production",
+			env:  map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": "https://app.example.com"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -178,6 +222,68 @@ func TestLoadConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadConfigCORS(t *testing.T) {
+	base := map[string]string{
+		"JWT_SECRET":  strings.Repeat("s", 32),
+		"DB_PASSWORD": "secret-password",
+		"ENVIRONMENT": "development",
+		"DB_SSLMODE":  "disable",
+	}
+	for key, value := range base {
+		t.Setenv(key, value)
+	}
+
+	t.Run("development defaults", func(t *testing.T) {
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v, want nil", err)
+		}
+
+		if len(cfg.CORSAllowedOrigins) != 1 || cfg.CORSAllowedOrigins[0] != "*" {
+			t.Fatalf("CORSAllowedOrigins = %v, want [*]", cfg.CORSAllowedOrigins)
+		}
+		if !containsString(cfg.CORSAllowedMethods, "PATCH") {
+			t.Fatalf("CORSAllowedMethods = %v, want it to contain PATCH", cfg.CORSAllowedMethods)
+		}
+		if !containsString(cfg.CORSExposedHeaders, "X-Request-ID") {
+			t.Fatalf("CORSExposedHeaders = %v, want it to contain X-Request-ID", cfg.CORSExposedHeaders)
+		}
+		if cfg.CORSAllowCredentials {
+			t.Fatal("CORSAllowCredentials = true, want false")
+		}
+		if cfg.CORSMaxAge != 12*time.Hour {
+			t.Fatalf("CORSMaxAge = %v, want %v", cfg.CORSMaxAge, 12*time.Hour)
+		}
+	})
+
+	t.Run("explicit overrides", func(t *testing.T) {
+		t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
+		t.Setenv("CORS_ALLOWED_METHODS", "get, patch")
+		t.Setenv("CORS_MAX_AGE", "1h")
+
+		cfg, err := LoadConfig()
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v, want nil", err)
+		}
+
+		if got, want := len(cfg.CORSAllowedOrigins), 2; got != want {
+			t.Fatalf("len(CORSAllowedOrigins) = %d, want %d", got, want)
+		}
+		if got, want := cfg.CORSAllowedOrigins[1], "https://admin.example.com"; got != want {
+			t.Fatalf("CORSAllowedOrigins[1] = %q, want %q", got, want)
+		}
+		if got, want := cfg.CORSAllowedMethods[0], "GET"; got != want {
+			t.Fatalf("CORSAllowedMethods[0] = %q, want %q", got, want)
+		}
+		if got, want := cfg.CORSAllowedMethods[1], "PATCH"; got != want {
+			t.Fatalf("CORSAllowedMethods[1] = %q, want %q", got, want)
+		}
+		if cfg.CORSMaxAge != time.Hour {
+			t.Fatalf("CORSMaxAge = %v, want %v", cfg.CORSMaxAge, time.Hour)
+		}
+	})
 }
 
 func TestValidateRateLimit(t *testing.T) {
@@ -284,5 +390,118 @@ func TestValidateServer(t *testing.T) {
 				t.Fatalf("validateServer() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidateCORS(t *testing.T) {
+	valid := Config{
+		Environment:        EnvironmentDevelopment,
+		CORSAllowedOrigins: []string{"https://app.example.com"},
+		CORSAllowedMethods: []string{"GET", "POST", "PATCH"},
+		CORSAllowedHeaders: []string{"Authorization"},
+		CORSMaxAge:         time.Hour,
+	}
+
+	copyWith := func(mutate func(*Config)) *Config {
+		c := valid
+		mutate(&c)
+		return &c
+	}
+
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+	}{
+		{
+			name: "valid explicit allowlist",
+			cfg:  &valid,
+		},
+		{
+			name: "wildcard is allowed in development without credentials",
+			cfg:  copyWith(func(c *Config) { c.CORSAllowedOrigins = []string{"*"} }),
+		},
+		{
+			name: "wildcard is rejected with credentials",
+			cfg: copyWith(func(c *Config) {
+				c.CORSAllowedOrigins = []string{"*"}
+				c.CORSAllowCredentials = true
+			}),
+			wantErr: true,
+		},
+		{
+			name: "production requires an allowlist",
+			cfg: copyWith(func(c *Config) {
+				c.Environment = EnvironmentProduction
+				c.CORSAllowedOrigins = nil
+			}),
+			wantErr: true,
+		},
+		{
+			name: "production rejects the wildcard",
+			cfg: copyWith(func(c *Config) {
+				c.Environment = EnvironmentProduction
+				c.CORSAllowedOrigins = []string{"*"}
+			}),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an origin without a scheme",
+			cfg:     copyWith(func(c *Config) { c.CORSAllowedOrigins = []string{"app.example.com"} }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an origin with a trailing slash",
+			cfg:     copyWith(func(c *Config) { c.CORSAllowedOrigins = []string{"https://app.example.com/"} }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an unsupported subdomain wildcard",
+			cfg:     copyWith(func(c *Config) { c.CORSAllowedOrigins = []string{"https://*.example.com"} }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an origin without a hostname",
+			cfg:     copyWith(func(c *Config) { c.CORSAllowedOrigins = []string{"http://:3000"} }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an unknown method",
+			cfg:     copyWith(func(c *Config) { c.CORSAllowedMethods = []string{"FETCH"} }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects a negative max age",
+			cfg:     copyWith(func(c *Config) { c.CORSMaxAge = -time.Second }),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.validateCORS()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateCORS() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateCORSNormalizesMethods(t *testing.T) {
+	cfg := Config{
+		Environment:        EnvironmentDevelopment,
+		CORSAllowedOrigins: []string{"*"},
+		CORSAllowedMethods: []string{"get", " Patch "},
+	}
+
+	if err := cfg.validateCORS(); err != nil {
+		t.Fatalf("validateCORS() error = %v, want nil", err)
+	}
+
+	if got, want := cfg.CORSAllowedMethods[0], "GET"; got != want {
+		t.Fatalf("method[0] = %q, want %q", got, want)
+	}
+	if got, want := cfg.CORSAllowedMethods[1], "PATCH"; got != want {
+		t.Fatalf("method[1] = %q, want %q", got, want)
 	}
 }

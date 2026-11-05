@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +36,40 @@ const (
 // dangerous: a wrong ENVIRONMENT silently exposes the docs and lowers the log
 // level, and a wrong DB_SSLMODE silently downgrades the connection to plaintext.
 var requiredEnvNames = []string{"ENVIRONMENT", "DB_SSLMODE"}
+
+// defaultCORSMethods and defaultCORSHeaders describe what the bundled frontend
+// workflow sends. They are only defaults: every value can be overridden from
+// the environment.
+var (
+	defaultCORSMethods = []string{
+		http.MethodGet,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodPatch,
+		http.MethodDelete,
+		http.MethodOptions,
+	}
+	defaultCORSHeaders = []string{
+		"Authorization",
+		"Accept",
+		"Content-Type",
+		"Origin",
+		"X-Requested-With",
+		"X-Request-ID",
+	}
+	defaultCORSExposedHeaders = []string{"X-Request-ID"}
+)
+
+// validCORSMethods are the request methods a preflight may advertise.
+var validCORSMethods = map[string]struct{}{
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+	http.MethodPatch:   {},
+	http.MethodDelete:  {},
+	http.MethodOptions: {},
+}
 
 type Config struct {
 	ServerPort            string
@@ -74,6 +110,14 @@ type Config struct {
 	RateLimitAuthRefill   float64
 	RateLimitUserCapacity int
 	RateLimitUserRefill   float64
+	// CORS settings. AllowedOrigins may contain "*" in development, but
+	// production requires an explicit allowlist (see validateCORS).
+	CORSAllowedOrigins   []string
+	CORSAllowedMethods   []string
+	CORSAllowedHeaders   []string
+	CORSExposedHeaders   []string
+	CORSAllowCredentials bool
+	CORSMaxAge           time.Duration
 }
 
 func (c *Config) IsProduction() bool {
@@ -134,12 +178,25 @@ func LoadConfig() (*Config, error) {
 		RateLimitAuthRefill:   envParse(&parseErr, "RATE_LIMIT_AUTH_REFILL_RATE", 0.2, parseFloat),
 		RateLimitUserCapacity: envParse(&parseErr, "RATE_LIMIT_USER_CAPACITY", 60, strconv.Atoi),
 		RateLimitUserRefill:   envParse(&parseErr, "RATE_LIMIT_USER_REFILL_RATE", 1.0, parseFloat),
+		CORSAllowedOrigins:    envList("CORS_ALLOWED_ORIGINS"),
+		CORSAllowedMethods:    envListOrDefault("CORS_ALLOWED_METHODS", defaultCORSMethods),
+		CORSAllowedHeaders:    envListOrDefault("CORS_ALLOWED_HEADERS", defaultCORSHeaders),
+		CORSExposedHeaders:    envListOrDefault("CORS_EXPOSED_HEADERS", defaultCORSExposedHeaders),
+		CORSAllowCredentials:  envParse(&parseErr, "CORS_ALLOW_CREDENTIALS", false, strconv.ParseBool),
+		CORSMaxAge:            envParse(&parseErr, "CORS_MAX_AGE", 12*time.Hour, time.ParseDuration),
 	}
 
 	// A malformed value is a deployment mistake, not something to paper over
 	// with a default: report it before any connection is opened.
 	if parseErr != nil {
 		return nil, parseErr
+	}
+
+	// Development keeps the permissive default so the bundled frontend works
+	// without extra setup. Production must name its origins explicitly, which
+	// validateCORS enforces below.
+	if len(cfg.CORSAllowedOrigins) == 0 && !cfg.IsProduction() {
+		cfg.CORSAllowedOrigins = []string{"*"}
 	}
 
 	if err := cfg.validateSecrets(); err != nil {
@@ -159,6 +216,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := cfg.validateServer(); err != nil {
+		return nil, err
+	}
+
+	if err := cfg.validateCORS(); err != nil {
 		return nil, err
 	}
 
@@ -252,6 +313,92 @@ func (c *Config) validateTrustedProxies() error {
 	return nil
 }
 
+// validateCORS rejects an allowlist that would produce invalid or unsafe CORS
+// headers at runtime. Development defaults to "*"; production must name its
+// origins explicitly.
+func (c *Config) validateCORS() error {
+	if c.CORSMaxAge < 0 {
+		return errors.New("CORS_MAX_AGE must not be negative")
+	}
+
+	// Reflecting an arbitrary origin while accepting credentials would let any
+	// site read authenticated responses, so the wildcard is only valid without
+	// credentials.
+	if c.CORSAllowCredentials && containsString(c.CORSAllowedOrigins, "*") {
+		return errors.New("CORS_ALLOW_CREDENTIALS cannot be true when CORS_ALLOWED_ORIGINS contains *")
+	}
+
+	if c.IsProduction() {
+		if len(c.CORSAllowedOrigins) == 0 {
+			return errors.New("CORS_ALLOWED_ORIGINS must be set in production")
+		}
+		if containsString(c.CORSAllowedOrigins, "*") {
+			return errors.New("CORS_ALLOWED_ORIGINS must not contain * in production")
+		}
+	}
+
+	for _, origin := range c.CORSAllowedOrigins {
+		if origin == "*" {
+			continue
+		}
+		if err := validateCORSOrigin(origin); err != nil {
+			return err
+		}
+	}
+
+	// Normalize the methods so the emitted Access-Control-Allow-Methods header
+	// always uses the case-sensitive uppercase tokens the spec expects.
+	for i, method := range c.CORSAllowedMethods {
+		upper := strings.ToUpper(strings.TrimSpace(method))
+		if _, ok := validCORSMethods[upper]; !ok {
+			return fmt.Errorf("CORS_ALLOWED_METHODS entry %q is not a valid HTTP method", method)
+		}
+		c.CORSAllowedMethods[i] = upper
+	}
+
+	return nil
+}
+
+// validateCORSOrigin accepts a bare scheme://host[:port] origin. A trailing
+// slash, path or query would never match the browser's Origin header, so it is
+// rejected at boot instead of silently failing on every request.
+func validateCORSOrigin(origin string) error {
+	// Subdomain wildcards are not supported, so reject anything that is not
+	// either a plain origin or the global "*" handled by the caller. Silently
+	// accepting an unsupported pattern would never match a browser Origin.
+	if strings.Contains(origin, "*") {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS entry %q must be an exact origin or \"*\"", origin)
+	}
+
+	u, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS entry %q is not a valid URL: %w", origin, err)
+	}
+
+	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS entry %q must use http or https", origin)
+	}
+
+	if u.Hostname() == "" {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS entry %q must include a host", origin)
+	}
+
+	if u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf("CORS_ALLOWED_ORIGINS entry %q must be scheme://host[:port] without a path, query, fragment or userinfo", origin)
+	}
+
+	return nil
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
 // validateRateLimit rejects a misconfigured limiter at boot instead of letting it
 // fail on the first request. Capacity and refill must both be positive: a zero
 // refill would drain the bucket forever, and a zero capacity would reject every
@@ -313,6 +460,15 @@ func envList(key string) []string {
 	}
 
 	return items
+}
+
+// envListOrDefault behaves like envList but falls back to a default list when
+// the variable is unset or blank.
+func envListOrDefault(key string, fallback []string) []string {
+	if items := envList(key); len(items) > 0 {
+		return items
+	}
+	return fallback
 }
 
 // envParse reads an environment variable into its typed form. Unset or empty
