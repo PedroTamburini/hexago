@@ -14,7 +14,6 @@ type UserUseCase interface {
 	Update(ctx context.Context, input dto.UpdateUserInput) (*dto.UpdateUserOutput, error)
 	Delete(ctx context.Context, input dto.DeleteUserInput) error
 	SetStatus(ctx context.Context, input dto.SetUserStatusInput) (*dto.SetUserStatusOutput, error)
-	ResetPassword(ctx context.Context, input dto.ResetPasswordInput) (*dto.ResetPasswordOutput, error)
 	AssignRole(ctx context.Context, input dto.AssignRoleInput) error
 	RemoveRole(ctx context.Context, input dto.RemoveRoleInput) error
 }

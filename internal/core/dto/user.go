@@ -83,16 +83,6 @@ type SetUserStatusOutput struct {
 	IsActive bool
 }
 
-type ResetPasswordInput struct {
-	TargetID uint64
-}
-
-type ResetPasswordOutput struct {
-	// TemporaryPassword is returned as plaintext so an administrator can hand it
-	// to the user; only its hash is persisted.
-	TemporaryPassword string
-}
-
 type AssignRoleInput struct {
 	TargetID uint64
 	RoleID   uint64

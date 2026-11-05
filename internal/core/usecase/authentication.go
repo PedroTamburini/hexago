@@ -23,22 +23,17 @@ const (
 )
 
 type authenticationUseCase struct {
-	userCredentialsFinder portout.AuthenticationRepository
-	userRepo              portout.UserRepository
-	hasher                portout.PasswordHasher
-	tokens                portout.TokenService
-	denylist              portout.TokenDenylist
-	sessions              portout.SessionRegistry
-	tokenVersions         portout.TokenVersionManager
-	dummyHash             string
+	credentials   portout.CredentialsRepository
+	hasher        portout.PasswordHasher
+	tokens        portout.TokenService
+	denylist      portout.TokenDenylist
+	sessions      portout.SessionRegistry
+	tokenVersions portout.TokenVersionManager
+	dummyHash     string
 }
 
-// NewAuthenticationUseCase builds the authentication use case. userRepo is used
-// only by ChangePassword, which needs to read and update credentials without
-// going through the broader user management flow.
 func NewAuthenticationUseCase(
-	userCredentialsFinder portout.AuthenticationRepository,
-	userRepo portout.UserRepository,
+	credentials portout.CredentialsRepository,
 	hasher portout.PasswordHasher,
 	tokens portout.TokenService,
 	denylist portout.TokenDenylist,
@@ -52,14 +47,13 @@ func NewAuthenticationUseCase(
 	}
 
 	return &authenticationUseCase{
-		userCredentialsFinder: userCredentialsFinder,
-		userRepo:              userRepo,
-		hasher:                hasher,
-		tokens:                tokens,
-		denylist:              denylist,
-		sessions:              sessions,
-		tokenVersions:         tokenVersions,
-		dummyHash:             dummyHash,
+		credentials:   credentials,
+		hasher:        hasher,
+		tokens:        tokens,
+		denylist:      denylist,
+		sessions:      sessions,
+		tokenVersions: tokenVersions,
+		dummyHash:     dummyHash,
 	}
 }
 
@@ -75,7 +69,7 @@ func (u *authenticationUseCase) Authenticate(ctx context.Context, input dto.Auth
 		return nil, domainerr.ErrInvalidCredentials
 	}
 
-	credentials, err := u.userCredentialsFinder.FindCredentialsByUsername(ctx, input.Username)
+	credentials, err := u.credentials.FindCredentialsByUsername(ctx, input.Username)
 	if err != nil {
 		if !errors.Is(err, domainerr.ErrUserNotFound) {
 			return nil, err
@@ -159,56 +153,5 @@ func (u *authenticationUseCase) RevokeToken(ctx context.Context, token string) e
 // token version, and clears the session records. It is the operation meant for
 // flows such as a password reset or a compromised account.
 func (u *authenticationUseCase) RevokeAllUserTokens(ctx context.Context, userID uint64) error {
-	if _, err := u.tokenVersions.IncrementVersion(ctx, userID); err != nil {
-		return err
-	}
-
-	return u.sessions.RemoveAllByUserID(ctx, userID)
-}
-
-// ChangePassword updates the password after validating the current one. The two
-// allowed purposes represent the two entry points: an access token for a normal
-// password change, and a change_password token for the flow started by an
-// administrative reset, which requires a live temporary password. Every
-// successful change revokes all tokens because the previous credentials must
-// stop working immediately.
-func (u *authenticationUseCase) ChangePassword(ctx context.Context, input dto.ChangePasswordInput) error {
-	if !validator.IsValidPassword(input.NewPassword) {
-		return domainerr.ErrInvalidPassword
-	}
-
-	credentials, err := u.userRepo.FindCredentialsByID(ctx, input.UserID)
-	if err != nil {
-		return err
-	}
-
-	switch input.TokenPurpose {
-	case portout.TokenPurposeChangePassword:
-		if credentials.TempPasswordExpiresAt == nil {
-			return domainerr.ErrChangePasswordNotAllowed
-		}
-
-		if time.Now().After(*credentials.TempPasswordExpiresAt) {
-			return domainerr.ErrTempPasswordExpired
-		}
-
-	case portout.TokenPurposeAccess:
-	default:
-		return domainerr.ErrChangePasswordNotAllowed
-	}
-
-	if err := u.hasher.Compare(credentials.PasswordHash, input.CurrentPassword); err != nil {
-		return domainerr.ErrInvalidCredentials
-	}
-
-	newHash, err := u.hasher.Hash(input.NewPassword)
-	if err != nil {
-		return err
-	}
-
-	if err := u.userRepo.UpdatePasswordAndClearTemp(ctx, input.UserID, newHash); err != nil {
-		return err
-	}
-
-	return u.RevokeAllUserTokens(ctx, input.UserID)
+	return revokeAllUserTokens(ctx, u.tokenVersions, u.sessions, userID)
 }

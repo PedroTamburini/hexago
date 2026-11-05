@@ -67,9 +67,5 @@ func (u *sessionManagementUseCase) RevokeSession(ctx context.Context, jti string
 // rejects tokens that no longer have the stored version and the registry is
 // cleared so the panel reflects the revocation immediately.
 func (u *sessionManagementUseCase) RevokeAllUserSessions(ctx context.Context, userID uint64) error {
-	if _, err := u.tokenVersions.IncrementVersion(ctx, userID); err != nil {
-		return err
-	}
-
-	return u.sessions.RemoveAllByUserID(ctx, userID)
+	return revokeAllUserTokens(ctx, u.tokenVersions, u.sessions, userID)
 }
