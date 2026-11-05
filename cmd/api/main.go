@@ -16,6 +16,7 @@ import (
 	"os"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
+	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/routes"
 	gormdb "github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm"
 	"github.com/PedroTamburini/hexago/internal/adapter/secondary/database/gorm/repository"
@@ -100,6 +101,14 @@ func run() error {
 	routes.Register(engine, log.Logger, routes.Options{
 		DocsEnabled:  !cfg.IsProduction(),
 		MaxBodyBytes: cfg.ServerMaxBodyBytes,
+		CORS: middleware.CORSConfig{
+			AllowedOrigins:   cfg.CORSAllowedOrigins,
+			AllowedMethods:   cfg.CORSAllowedMethods,
+			AllowedHeaders:   cfg.CORSAllowedHeaders,
+			ExposedHeaders:   cfg.CORSExposedHeaders,
+			AllowCredentials: cfg.CORSAllowCredentials,
+			MaxAge:           cfg.CORSMaxAge,
+		},
 	}, wire(cfg, db, redisClient, hasher, tokens))
 
 	return server.New(cfg, log, engine).Start()

@@ -39,21 +39,6 @@ func Logger(log *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-func CORS() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		ctx.Header("Access-Control-Allow-Origin", "*")
-		ctx.Header("Access-Control-Allow-Credentials", "false") // Modify as needed and when specifying Allowed-Origins
-		ctx.Header("Access-Control-Allow-Headers", "Authorization, Accept, Content-Type, Origin, X-Requested-With")
-		ctx.Header("Access-Control-Allow-Methods", "DELETE, GET, OPTIONS, POST, PUT")
-
-		if ctx.Request.Method == http.MethodOptions {
-			ctx.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-		ctx.Next()
-	}
-}
-
 // SecurityHeaders sets conservative response headers on every reply. They belong
 // here rather than in the CORS preflight, which only advertises request headers.
 func SecurityHeaders() gin.HandlerFunc {

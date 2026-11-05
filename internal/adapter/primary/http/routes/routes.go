@@ -19,6 +19,8 @@ type Options struct {
 	DocsEnabled bool
 	// MaxBodyBytes caps the size of a request body on the versioned API.
 	MaxBodyBytes int
+	// CORS configures the cross-origin policy applied to every route.
+	CORS middleware.CORSConfig
 }
 
 // Dependencies bundles everything the HTTP route tree needs to build itself.
@@ -61,7 +63,7 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		middleware.RequestID(),
 		middleware.Logger(log),
 		middleware.Recovery(log),
-		middleware.CORS(),
+		middleware.CORS(opts.CORS),
 		middleware.SecurityHeaders(),
 	)
 
