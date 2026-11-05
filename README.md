@@ -2,6 +2,67 @@
 
 Go backend template using Hexagonal Architecture, DDD principles, JWT authentication, PostgreSQL, and Docker.
 
+## Architecture
+
+The code is organized **layer first, then by feature file inside each layer**.
+A request crosses the same three layers for every feature, so adding a feature
+means adding a file to each layer instead of editing one global file.
+
+```text
+internal/
+├── core/                      # business rules, independent of any framework
+│   ├── domain/                # entities, domain errors and validators
+│   ├── dto/                   # use case input/output data
+│   ├── port/
+│   │   ├── primary/           # capabilities exposed by the core (use cases)
+│   │   └── secondary/         # capabilities required by the core (repositories, tokens, ...)
+│   ├── permission/            # RBAC permission names
+│   └── usecase/               # orchestration, one file per capability
+├── adapter/
+│   ├── primary/http/          # Gin transport: routes, middleware, handlers, request/response
+│   └── secondary/             # GORM repositories, JWT, password hashing, Redis stores
+└── infrastructure/            # configuration, database/Redis connections, process startup
+```
+
+The dependency rule is `adapter -> core` and `infrastructure -> core`. The core
+never imports adapters or infrastructure, and an adapter never imports
+infrastructure. `internal/architecture` contains a structural test that fails
+the build when the rule is broken.
+
+### Use cases
+
+| Use case | Responsibilities |
+| --- | --- |
+| `AuthenticationUseCase` | Login, logout and single-token revocation. |
+| `PasswordUseCase` | Self-service password change and administrative password reset. |
+| `UserUseCase` | Profile CRUD, active status and role assignment. |
+| `SessionManagementUseCase` | List and revoke active sessions. |
+
+Credentials and roles have their own secondary ports and repositories:
+
+* `CredentialsRepository` owns every read/write of the password hash and the
+  temporary password marker. Keeping it separate from `UserRepository` prevents
+  the hash from leaking through a user read model that may be serialized or
+  logged.
+* `RoleRepository` owns role assignment and the role-based questions the
+  business rules need (`IsAdmin`, `CountActiveAdmins`).
+* `UserRepository` is limited to the user aggregate: profile, lifecycle and the
+  active flag.
+
+`PasswordHasher` is a secondary port implemented by the security adapter, so the
+core depends only on the ability to hash and compare passwords.
+
+### Adding a feature
+
+1. Add or extend the entity/validator and the DTOs in `internal/core`.
+2. Declare the primary port (the capability the HTTP layer will call).
+3. Declare a secondary port only if a new capability is needed.
+4. Implement the use case in its own file under `internal/core/usecase`.
+5. Add the handler plus request/response types under
+   `internal/adapter/primary/http`.
+6. Register the route in `routes.go` and wire everything in `cmd/api/main.go`.
+7. Add unit tests next to the use case and run the architecture test.
+
 ## Running with Docker
 
 The stack (PostgreSQL, Redis and the API) is split across three compose files:
@@ -240,6 +301,7 @@ every stored password.
 ## Documentation
 
 * [Swagger / OpenAPI](docs/swagger.json) — generated API specification.
+* [CONTRIBUTING.md](CONTRIBUTING.md) — local workflow, architecture conventions and checks.
 
 ### Swagger UI
 
