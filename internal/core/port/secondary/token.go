@@ -31,6 +31,30 @@ type TokenParser interface {
 	ParseClaims(token string) (*TokenClaims, error)
 }
 
+// TokenIssuer mints access tokens for a given subject. The token version is
+// embedded in the token so a later increment invalidates every token issued
+// before it, and the purpose limits where the token can be used.
+type TokenIssuer interface {
+	GenerateToken(userID uint64, tokenVersion int) (string, error)
+	GenerateTokenWithPurpose(userID uint64, tokenVersion int, purpose string) (string, error)
+	ExpireSeconds() int64
+}
+
+// TokenValidator validates access tokens presented by clients. It is the
+// capability required by the HTTP authentication middleware.
+type TokenValidator interface {
+	ValidateToken(token string) (uint64, error)
+}
+
+// TokenService is the composite capability implemented by the token adapter.
+// It exists for composition only: consumers should depend on the narrow
+// interface they actually need (TokenIssuer, TokenValidator or TokenParser).
+type TokenService interface {
+	TokenIssuer
+	TokenValidator
+	TokenParser
+}
+
 // TokenDenylist manages revoked tokens individually.
 type TokenDenylist interface {
 	Revoke(ctx context.Context, jti string, expiresAt time.Time) error
