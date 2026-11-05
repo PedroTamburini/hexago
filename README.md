@@ -225,6 +225,25 @@ Redis enabled.
   `TRUSTED_PROXIES` to that proxy's IPs/CIDRs (comma-separated) so the forwarded
   client IP is honoured without letting arbitrary clients spoof it.
 
+## CORS
+
+Cross-origin access is controlled by the `CORS_*` variables documented in
+`.env.example`:
+
+* `CORS_ALLOWED_ORIGINS` — exact origins (comma-separated) allowed to call the
+  API. Development defaults to `*`; production requires an explicit list and
+  rejects `*`, because the wildcard cannot be combined with credentials.
+* `CORS_ALLOWED_METHODS` / `CORS_ALLOWED_HEADERS` — advertised on preflight
+  responses.
+* `CORS_EXPOSED_HEADERS` — response headers the browser is allowed to read.
+* `CORS_ALLOW_CREDENTIALS` — set to `true` only when the frontend relies on
+  cookies; the middleware then reflects the request `Origin` instead of sending
+  `*`.
+* `CORS_MAX_AGE` — how long a browser may cache a preflight response.
+
+Every response that depends on the request `Origin` carries `Vary: Origin`, so
+shared caches do not serve one origin's CORS headers to another.
+
 ## Unique usernames and emails
 
 The `username` and the `email` are unique **among the accounts that were not
