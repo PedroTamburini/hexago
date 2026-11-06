@@ -25,5 +25,7 @@ RUN apk add --no-cache ca-certificates tzdata && \
 COPY --from=builder /out/api /api
 
 USER app
-EXPOSE 8080
+# 8080 is the default HTTP listener; 8443 is the recommended direct-TLS port
+# because the container does not run as root.
+EXPOSE 8080 8443
 ENTRYPOINT ["/api"]

@@ -59,7 +59,10 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      # Plaintext works in proxy mode; direct TLS mode needs the HTTPS probe.
+      # --no-check-certificate is required because the container reaches the
+      # public certificate through localhost.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:$${SERVER_PORT:-8080}/health >/dev/null 2>&1 || wget --no-check-certificate -qO- https://localhost:$${SERVER_PORT:-8080}/health >/dev/null 2>&1"]
       interval: 10s
       timeout: 3s
       retries: 5
