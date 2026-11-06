@@ -114,13 +114,49 @@ docker compose --env-file .env.prod \
 `--env-file` is required for interpolation (the Redis password), while the `api`
 service reads its own variables through `env_file: .env.prod`. Nothing is
 published to the host: put the API behind a reverse proxy or load balancer on
-the same network. `.env.prod.example` already ships production defaults
-(`DB_SSLMODE=require`, `DB_AUTO_MIGRATION=false`, `SEED_ENABLED=false`).
+the same network. TLS is mandatory in production; see
+[TLS in production](#tls-in-production). `.env.prod.example` already ships
+production defaults (`DB_SSLMODE=require`, `DB_AUTO_MIGRATION=false`,
+`SEED_ENABLED=false`).
 
 To use managed services instead of the bundled containers, override `DB_HOST`,
 `DB_PORT` and `REDIS_ADDR` in `docker-compose.prod.yml` (a commented example is
 included) and comment out the `postgres`/`redis` services in
 `docker-compose.yml`.
+
+## TLS in production
+
+TLS is mandatory when `ENVIRONMENT=production`: the process fails to boot
+unless `TLS_MODE` is `proxy` or `direct`. `TLS_MODE=off` is only accepted
+outside production.
+
+| Mode | Listener | Behaviour |
+| --- | --- | --- |
+| `proxy` | plaintext HTTP | TLS terminates at the reverse proxy/load balancer. The API trusts `X-Forwarded-Proto` only from `TRUSTED_PROXIES` and answers plaintext requests with `308 Permanent Redirect` to the same URL over HTTPS. `TRUSTED_PROXIES` is therefore required. |
+| `direct` | HTTPS | The API terminates TLS itself with `TLS_CERT_FILE` and `TLS_KEY_FILE`. The certificate pair is loaded at boot, so an invalid file aborts startup. TLS 1.2 is the minimum version. |
+
+`GET /health` is exempt from the redirect so the container health probe keeps
+working against the internal plaintext listener in `proxy` mode.
+
+In both modes secure responses carry HSTS (`TLS_HSTS_MAX_AGE`, default one year;
+`TLS_HSTS_INCLUDE_SUBDOMAINS`, default false). Set the max age to `0` to disable
+the header.
+
+Proxy mode requires the proxy to send `X-Forwarded-Proto: https`. Without that
+header the API keeps redirecting the client, which shows up as a redirect loop;
+configure the header at the proxy. The rightmost value of a comma-separated
+header is used, so a client cannot spoof it by sending its own. The proxy must
+also preserve the original `Host` header (or set it to the public hostname),
+because the redirect target is built from it.
+
+For `direct` mode the container runs as an unprivileged user: use
+`SERVER_PORT=8443` (and publish/map port 443 to it) instead of 443, or add
+`cap_add: [NET_BIND_SERVICE]`. Mount the certificate pair read-only (see the
+commented example in `docker-compose.prod.yml`).
+
+The database connection is intentionally left to the operator. When TLS is
+enabled for the API and `DB_SSLMODE` does not guarantee encryption (`disable`,
+`allow` or `prefer`), the API logs a warning at boot.
 
 ## Rate limiting
 
@@ -299,6 +335,9 @@ default, except for the two variables without a safe one: `ENVIRONMENT` and
 `DB_SSLMODE` are always required (a wrong `ENVIRONMENT` would silently expose
 the docs and lower the log level, and a wrong `DB_SSLMODE` would downgrade the
 database connection to plaintext). Every `.env` example ships both.
+
+`TLS_MODE` is required in production, where it must be `proxy` or `direct`; see
+[TLS in production](#tls-in-production).
 
 Credentials are checked with the policy that matches how they are used:
 
