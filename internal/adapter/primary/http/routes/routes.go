@@ -21,6 +21,9 @@ type Options struct {
 	MaxBodyBytes int
 	// CORS configures the cross-origin policy applied to every route.
 	CORS middleware.CORSConfig
+	// TLS controls the HTTPS enforcement and HSTS headers. It is mandatory in
+	// production, where plaintext requests are redirected to HTTPS.
+	TLS middleware.TLSConfig
 }
 
 // Dependencies bundles everything the HTTP route tree needs to build itself.
@@ -63,6 +66,7 @@ func Register(engine *gin.Engine, log *slog.Logger, opts Options, deps Dependenc
 		middleware.RequestID(),
 		middleware.Logger(log),
 		middleware.Recovery(log),
+		middleware.RequireHTTPS(opts.TLS),
 		middleware.CORS(opts.CORS),
 		middleware.SecurityHeaders(),
 	)
