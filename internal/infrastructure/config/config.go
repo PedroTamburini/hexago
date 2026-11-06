@@ -19,6 +19,17 @@ import (
 
 type Environment string
 
+// TLSMode selects where TLS terminates. "off" is only valid outside
+// production, "proxy" expects a reverse proxy to terminate TLS and forward
+// X-Forwarded-Proto, and "direct" makes this server terminate TLS itself.
+type TLSMode string
+
+const (
+	TLSModeOff    TLSMode = "off"
+	TLSModeProxy  TLSMode = "proxy"
+	TLSModeDirect TLSMode = "direct"
+)
+
 const (
 	EnvironmentDevelopment Environment = "development"
 	EnvironmentProduction  Environment = "production"
@@ -81,35 +92,42 @@ type Config struct {
 	// TrustedProxies lists the IPs/CIDRs whose forwarding headers
 	// (X-Forwarded-For/X-Real-IP) may be trusted when resolving the client IP.
 	// Empty means "trust no proxy", so c.ClientIP() uses the socket address.
-	TrustedProxies        []string
-	Environment           Environment
-	DBHost                string
-	DBPort                string
-	DBUser                string
-	DBName                string
-	DBPassword            string
-	DBSSLMode             string
-	DBTimeZone            string
-	DBMaxOpenConns        int
-	DBMaxIdleConns        int
-	DBConnMaxLifeTime     time.Duration
-	DBAutoMigration       bool
-	HasherCost            int
-	JWTSecret             string
-	JWTExpiration         time.Duration
-	SeedEnabled           bool
-	AdminUsername         string
-	AdminEmail            string
-	AdminPassword         string
-	RedisAddr             string
-	RedisPassword         string
-	RedisDB               int
-	RedisPoolSize         int
-	RateLimitEnabled      bool
-	RateLimitAuthCapacity int
-	RateLimitAuthRefill   float64
-	RateLimitUserCapacity int
-	RateLimitUserRefill   float64
+	TrustedProxies []string
+	// TLS settings. TLSMode is mandatory in production and must be "proxy" or
+	// "direct"; "off" is only accepted outside production.
+	TLSMode                  TLSMode
+	TLSCertFile              string
+	TLSKeyFile               string
+	TLSHSTSMaxAge            time.Duration
+	TLSHSTSIncludeSubDomains bool
+	Environment              Environment
+	DBHost                   string
+	DBPort                   string
+	DBUser                   string
+	DBName                   string
+	DBPassword               string
+	DBSSLMode                string
+	DBTimeZone               string
+	DBMaxOpenConns           int
+	DBMaxIdleConns           int
+	DBConnMaxLifeTime        time.Duration
+	DBAutoMigration          bool
+	HasherCost               int
+	JWTSecret                string
+	JWTExpiration            time.Duration
+	SeedEnabled              bool
+	AdminUsername            string
+	AdminEmail               string
+	AdminPassword            string
+	RedisAddr                string
+	RedisPassword            string
+	RedisDB                  int
+	RedisPoolSize            int
+	RateLimitEnabled         bool
+	RateLimitAuthCapacity    int
+	RateLimitAuthRefill      float64
+	RateLimitUserCapacity    int
+	RateLimitUserRefill      float64
 	// CORS settings. AllowedOrigins may contain "*" in development, but
 	// production requires an explicit allowlist (see validateCORS).
 	CORSAllowedOrigins   []string
@@ -122,6 +140,24 @@ type Config struct {
 
 func (c *Config) IsProduction() bool {
 	return c.Environment == EnvironmentProduction
+}
+
+// TLSEnabled reports whether the API is expected to serve clients over TLS,
+// either directly or through a trusted reverse proxy.
+func (c *Config) TLSEnabled() bool {
+	return c.TLSMode != TLSModeOff
+}
+
+// DatabaseUsesTLS reports whether DB_SSLMODE guarantees an encrypted database
+// connection. "allow" and "prefer" may still fall back to plaintext, so only
+// the modes that enforce encryption are considered secure.
+func (c *Config) DatabaseUsesTLS() bool {
+	switch c.DBSSLMode {
+	case "require", "verify-ca", "verify-full":
+		return true
+	default:
+		return false
+	}
 }
 
 func LoadConfig() (*Config, error) {
@@ -143,47 +179,52 @@ func LoadConfig() (*Config, error) {
 	var parseErr error
 
 	cfg := &Config{
-		ServerPort:            env("SERVER_PORT", "8080"),
-		ServerShutdownTimeout: envParse(&parseErr, "SERVER_SHUTDOWN_TIMEOUT", 5*time.Second, time.ParseDuration),
-		ServerReadTimeOut:     envParse(&parseErr, "SERVER_READ_TIMEOUT", 10*time.Second, time.ParseDuration),
-		ServerWriteTimeOut:    envParse(&parseErr, "SERVER_WRITE_TIMEOUT", 10*time.Second, time.ParseDuration),
-		ServerIdleTimeOut:     envParse(&parseErr, "SERVER_IDLE_TIMEOUT", 60*time.Second, time.ParseDuration),
-		ServerMaxBodyBytes:    envParse(&parseErr, "SERVER_MAX_BODY_BYTES", 2<<20, strconv.Atoi),
-		TrustedProxies:        envList("TRUSTED_PROXIES"),
-		Environment:           envParse(&parseErr, "ENVIRONMENT", EnvironmentDevelopment, validEnvironment),
-		DBHost:                env("DB_HOST", "localhost"),
-		DBPort:                env("DB_PORT", "5432"),
-		DBUser:                env("DB_USER", "postgres"),
-		DBName:                env("DB_NAME", "hexago"),
-		DBPassword:            env("DB_PASSWORD", ""),
-		DBSSLMode:             envParse(&parseErr, "DB_SSLMODE", "disable", validSSLMode),
-		DBTimeZone:            env("DB_TIMEZONE", "UTC"),
-		DBMaxOpenConns:        envParse(&parseErr, "DB_MAX_OPEN_CONNS", 25, strconv.Atoi),
-		DBMaxIdleConns:        envParse(&parseErr, "DB_MAX_IDLE_CONNS", 25, strconv.Atoi),
-		DBConnMaxLifeTime:     envParse(&parseErr, "DB_CONN_MAX_LIFETIME", 5*time.Minute, time.ParseDuration),
-		DBAutoMigration:       envParse(&parseErr, "DB_AUTO_MIGRATION", false, strconv.ParseBool),
-		HasherCost:            envParse(&parseErr, "HASHER_COST", 12, strconv.Atoi),
-		JWTSecret:             env("JWT_SECRET", ""),
-		JWTExpiration:         envParse(&parseErr, "JWT_EXPIRATION", 15*time.Minute, time.ParseDuration),
-		SeedEnabled:           envParse(&parseErr, "SEED_ENABLED", false, strconv.ParseBool),
-		AdminUsername:         env("ADMIN_USERNAME", "admin.local"),
-		AdminEmail:            env("ADMIN_EMAIL", "admin@hexago.local"),
-		AdminPassword:         env("ADMIN_PASSWORD", ""),
-		RedisAddr:             env("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:         env("REDIS_PASSWORD", ""),
-		RedisDB:               envParse(&parseErr, "REDIS_DB", 0, strconv.Atoi),
-		RedisPoolSize:         envParse(&parseErr, "REDIS_POOL_SIZE", 10, strconv.Atoi),
-		RateLimitEnabled:      envParse(&parseErr, "RATE_LIMIT_ENABLED", true, strconv.ParseBool),
-		RateLimitAuthCapacity: envParse(&parseErr, "RATE_LIMIT_AUTH_CAPACITY", 10, strconv.Atoi),
-		RateLimitAuthRefill:   envParse(&parseErr, "RATE_LIMIT_AUTH_REFILL_RATE", 0.2, parseFloat),
-		RateLimitUserCapacity: envParse(&parseErr, "RATE_LIMIT_USER_CAPACITY", 60, strconv.Atoi),
-		RateLimitUserRefill:   envParse(&parseErr, "RATE_LIMIT_USER_REFILL_RATE", 1.0, parseFloat),
-		CORSAllowedOrigins:    envList("CORS_ALLOWED_ORIGINS"),
-		CORSAllowedMethods:    envListOrDefault("CORS_ALLOWED_METHODS", defaultCORSMethods),
-		CORSAllowedHeaders:    envListOrDefault("CORS_ALLOWED_HEADERS", defaultCORSHeaders),
-		CORSExposedHeaders:    envListOrDefault("CORS_EXPOSED_HEADERS", defaultCORSExposedHeaders),
-		CORSAllowCredentials:  envParse(&parseErr, "CORS_ALLOW_CREDENTIALS", false, strconv.ParseBool),
-		CORSMaxAge:            envParse(&parseErr, "CORS_MAX_AGE", 12*time.Hour, time.ParseDuration),
+		ServerPort:               env("SERVER_PORT", "8080"),
+		ServerShutdownTimeout:    envParse(&parseErr, "SERVER_SHUTDOWN_TIMEOUT", 5*time.Second, time.ParseDuration),
+		ServerReadTimeOut:        envParse(&parseErr, "SERVER_READ_TIMEOUT", 10*time.Second, time.ParseDuration),
+		ServerWriteTimeOut:       envParse(&parseErr, "SERVER_WRITE_TIMEOUT", 10*time.Second, time.ParseDuration),
+		ServerIdleTimeOut:        envParse(&parseErr, "SERVER_IDLE_TIMEOUT", 60*time.Second, time.ParseDuration),
+		ServerMaxBodyBytes:       envParse(&parseErr, "SERVER_MAX_BODY_BYTES", 2<<20, strconv.Atoi),
+		TrustedProxies:           envList("TRUSTED_PROXIES"),
+		TLSMode:                  envParse(&parseErr, "TLS_MODE", TLSModeOff, validTLSMode),
+		TLSCertFile:              env("TLS_CERT_FILE", ""),
+		TLSKeyFile:               env("TLS_KEY_FILE", ""),
+		TLSHSTSMaxAge:            envParse(&parseErr, "TLS_HSTS_MAX_AGE", 365*24*time.Hour, time.ParseDuration),
+		TLSHSTSIncludeSubDomains: envParse(&parseErr, "TLS_HSTS_INCLUDE_SUBDOMAINS", false, strconv.ParseBool),
+		Environment:              envParse(&parseErr, "ENVIRONMENT", EnvironmentDevelopment, validEnvironment),
+		DBHost:                   env("DB_HOST", "localhost"),
+		DBPort:                   env("DB_PORT", "5432"),
+		DBUser:                   env("DB_USER", "postgres"),
+		DBName:                   env("DB_NAME", "hexago"),
+		DBPassword:               env("DB_PASSWORD", ""),
+		DBSSLMode:                envParse(&parseErr, "DB_SSLMODE", "disable", validSSLMode),
+		DBTimeZone:               env("DB_TIMEZONE", "UTC"),
+		DBMaxOpenConns:           envParse(&parseErr, "DB_MAX_OPEN_CONNS", 25, strconv.Atoi),
+		DBMaxIdleConns:           envParse(&parseErr, "DB_MAX_IDLE_CONNS", 25, strconv.Atoi),
+		DBConnMaxLifeTime:        envParse(&parseErr, "DB_CONN_MAX_LIFETIME", 5*time.Minute, time.ParseDuration),
+		DBAutoMigration:          envParse(&parseErr, "DB_AUTO_MIGRATION", false, strconv.ParseBool),
+		HasherCost:               envParse(&parseErr, "HASHER_COST", 12, strconv.Atoi),
+		JWTSecret:                env("JWT_SECRET", ""),
+		JWTExpiration:            envParse(&parseErr, "JWT_EXPIRATION", 15*time.Minute, time.ParseDuration),
+		SeedEnabled:              envParse(&parseErr, "SEED_ENABLED", false, strconv.ParseBool),
+		AdminUsername:            env("ADMIN_USERNAME", "admin.local"),
+		AdminEmail:               env("ADMIN_EMAIL", "admin@hexago.local"),
+		AdminPassword:            env("ADMIN_PASSWORD", ""),
+		RedisAddr:                env("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:            env("REDIS_PASSWORD", ""),
+		RedisDB:                  envParse(&parseErr, "REDIS_DB", 0, strconv.Atoi),
+		RedisPoolSize:            envParse(&parseErr, "REDIS_POOL_SIZE", 10, strconv.Atoi),
+		RateLimitEnabled:         envParse(&parseErr, "RATE_LIMIT_ENABLED", true, strconv.ParseBool),
+		RateLimitAuthCapacity:    envParse(&parseErr, "RATE_LIMIT_AUTH_CAPACITY", 10, strconv.Atoi),
+		RateLimitAuthRefill:      envParse(&parseErr, "RATE_LIMIT_AUTH_REFILL_RATE", 0.2, parseFloat),
+		RateLimitUserCapacity:    envParse(&parseErr, "RATE_LIMIT_USER_CAPACITY", 60, strconv.Atoi),
+		RateLimitUserRefill:      envParse(&parseErr, "RATE_LIMIT_USER_REFILL_RATE", 1.0, parseFloat),
+		CORSAllowedOrigins:       envList("CORS_ALLOWED_ORIGINS"),
+		CORSAllowedMethods:       envListOrDefault("CORS_ALLOWED_METHODS", defaultCORSMethods),
+		CORSAllowedHeaders:       envListOrDefault("CORS_ALLOWED_HEADERS", defaultCORSHeaders),
+		CORSExposedHeaders:       envListOrDefault("CORS_EXPOSED_HEADERS", defaultCORSExposedHeaders),
+		CORSAllowCredentials:     envParse(&parseErr, "CORS_ALLOW_CREDENTIALS", false, strconv.ParseBool),
+		CORSMaxAge:               envParse(&parseErr, "CORS_MAX_AGE", 12*time.Hour, time.ParseDuration),
 	}
 
 	// A malformed value is a deployment mistake, not something to paper over
@@ -216,6 +257,10 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := cfg.validateServer(); err != nil {
+		return nil, err
+	}
+
+	if err := cfg.validateTLS(); err != nil {
 		return nil, err
 	}
 
@@ -295,6 +340,34 @@ func (c *Config) validateServer() error {
 	}
 
 	return c.validateTrustedProxies()
+}
+
+// validateTLS makes TLS mandatory in production and rejects a mode whose
+// required companion settings are missing, so a misconfigured deployment fails
+// the boot instead of silently serving plaintext.
+func (c *Config) validateTLS() error {
+	if c.TLSHSTSMaxAge < 0 {
+		return errors.New("TLS_HSTS_MAX_AGE must not be negative")
+	}
+
+	switch c.TLSMode {
+	case TLSModeOff:
+		if c.IsProduction() {
+			return errors.New("TLS_MODE must be proxy or direct in production")
+		}
+	case TLSModeProxy:
+		if len(c.TrustedProxies) == 0 {
+			return errors.New("TLS_MODE=proxy requires TRUSTED_PROXIES so X-Forwarded-Proto can be trusted")
+		}
+	case TLSModeDirect:
+		if c.TLSCertFile == "" || c.TLSKeyFile == "" {
+			return errors.New("TLS_MODE=direct requires TLS_CERT_FILE and TLS_KEY_FILE")
+		}
+	default:
+		return fmt.Errorf("TLS_MODE %q is not supported", c.TLSMode)
+	}
+
+	return nil
 }
 
 // validateTrustedProxies ensures every entry is a parseable IP or CIDR. gin
@@ -495,6 +568,15 @@ func validEnvironment(value string) (Environment, error) {
 		return "", fmt.Errorf("must be one of %s, %s", EnvironmentDevelopment, EnvironmentProduction)
 	}
 	return env, nil
+}
+
+func validTLSMode(value string) (TLSMode, error) {
+	mode := TLSMode(value)
+	switch mode {
+	case TLSModeOff, TLSModeProxy, TLSModeDirect:
+		return mode, nil
+	}
+	return "", fmt.Errorf("must be one of %s, %s, %s", TLSModeOff, TLSModeProxy, TLSModeDirect)
 }
 
 func validSSLMode(value string) (string, error) {

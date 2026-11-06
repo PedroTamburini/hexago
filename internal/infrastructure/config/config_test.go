@@ -10,10 +10,12 @@ func TestLoadConfig(t *testing.T) {
 	// The variables without a usable default; every case starts from a valid
 	// baseline so only the field under test can make LoadConfig fail.
 	base := map[string]string{
-		"JWT_SECRET":  strings.Repeat("s", 32),
-		"DB_PASSWORD": "secret-password",
-		"ENVIRONMENT": "development",
-		"DB_SSLMODE":  "disable",
+		"JWT_SECRET":      strings.Repeat("s", 32),
+		"DB_PASSWORD":     "secret-password",
+		"ENVIRONMENT":     "development",
+		"DB_SSLMODE":      "disable",
+		"TLS_MODE":        "off",
+		"TRUSTED_PROXIES": "",
 	}
 
 	tests := []struct {
@@ -149,6 +151,53 @@ func TestLoadConfig(t *testing.T) {
 			env:  map[string]string{"SEED_ENABLED": "true", "ADMIN_PASSWORD": "AdminPass123"},
 		},
 		{
+			name:    "rejects an unknown TLS mode",
+			env:     map[string]string{"TLS_MODE": "hybrid"},
+			wantErr: "TLS_MODE",
+		},
+		{
+			name:    "rejects proxy mode without trusted proxies",
+			env:     map[string]string{"TLS_MODE": "proxy"},
+			wantErr: "TRUSTED_PROXIES",
+		},
+		{
+			name: "accepts proxy mode with trusted proxies",
+			env:  map[string]string{"TLS_MODE": "proxy", "TRUSTED_PROXIES": "10.0.0.0/8"},
+		},
+		{
+			name:    "rejects direct mode without certificate",
+			env:     map[string]string{"TLS_MODE": "direct"},
+			wantErr: "TLS_CERT_FILE",
+		},
+		{
+			name:    "rejects direct mode without key",
+			env:     map[string]string{"TLS_MODE": "direct", "TLS_CERT_FILE": "/certs/fullchain.pem"},
+			wantErr: "TLS_KEY_FILE",
+		},
+		{
+			name: "accepts direct mode with certificate and key",
+			env: map[string]string{
+				"TLS_MODE":      "direct",
+				"TLS_CERT_FILE": "/certs/fullchain.pem",
+				"TLS_KEY_FILE":  "/certs/privkey.pem",
+			},
+		},
+		{
+			name:    "rejects production with TLS disabled",
+			env:     map[string]string{"ENVIRONMENT": "production", "TLS_MODE": "off", "CORS_ALLOWED_ORIGINS": "https://app.example.com"},
+			wantErr: "TLS_MODE",
+		},
+		{
+			name:    "rejects a negative HSTS max age",
+			env:     map[string]string{"TLS_HSTS_MAX_AGE": "-1h"},
+			wantErr: "TLS_HSTS_MAX_AGE",
+		},
+		{
+			name:    "rejects a malformed HSTS max age",
+			env:     map[string]string{"TLS_HSTS_MAX_AGE": "forever"},
+			wantErr: "TLS_HSTS_MAX_AGE",
+		},
+		{
 			name: "accepts explicit CORS origins",
 			env:  map[string]string{"CORS_ALLOWED_ORIGINS": "https://app.example.com,http://localhost:3000"},
 		},
@@ -179,17 +228,17 @@ func TestLoadConfig(t *testing.T) {
 		},
 		{
 			name:    "rejects production without CORS origins",
-			env:     map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": ""},
+			env:     map[string]string{"ENVIRONMENT": "production", "TLS_MODE": "proxy", "TRUSTED_PROXIES": "10.0.0.0/8", "CORS_ALLOWED_ORIGINS": ""},
 			wantErr: "CORS_ALLOWED_ORIGINS",
 		},
 		{
 			name:    "rejects wildcard CORS origins in production",
-			env:     map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": "*"},
+			env:     map[string]string{"ENVIRONMENT": "production", "TLS_MODE": "proxy", "TRUSTED_PROXIES": "10.0.0.0/8", "CORS_ALLOWED_ORIGINS": "*"},
 			wantErr: "CORS_ALLOWED_ORIGINS",
 		},
 		{
 			name: "accepts explicit CORS origins in production",
-			env:  map[string]string{"ENVIRONMENT": "production", "CORS_ALLOWED_ORIGINS": "https://app.example.com"},
+			env:  map[string]string{"ENVIRONMENT": "production", "TLS_MODE": "proxy", "TRUSTED_PROXIES": "10.0.0.0/8", "CORS_ALLOWED_ORIGINS": "https://app.example.com"},
 		},
 	}
 
@@ -226,10 +275,12 @@ func TestLoadConfig(t *testing.T) {
 
 func TestLoadConfigCORS(t *testing.T) {
 	base := map[string]string{
-		"JWT_SECRET":  strings.Repeat("s", 32),
-		"DB_PASSWORD": "secret-password",
-		"ENVIRONMENT": "development",
-		"DB_SSLMODE":  "disable",
+		"JWT_SECRET":      strings.Repeat("s", 32),
+		"DB_PASSWORD":     "secret-password",
+		"ENVIRONMENT":     "development",
+		"DB_SSLMODE":      "disable",
+		"TLS_MODE":        "off",
+		"TRUSTED_PROXIES": "",
 	}
 	for key, value := range base {
 		t.Setenv(key, value)
@@ -388,6 +439,132 @@ func TestValidateServer(t *testing.T) {
 			err := tt.cfg.validateServer()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateServer() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateTLS(t *testing.T) {
+	valid := Config{
+		Environment:    EnvironmentDevelopment,
+		TLSMode:        TLSModeOff,
+		TLSHSTSMaxAge:  time.Hour,
+		TrustedProxies: []string{"10.0.0.0/8"},
+		TLSCertFile:    "/certs/fullchain.pem",
+		TLSKeyFile:     "/certs/privkey.pem",
+	}
+
+	copyWith := func(mutate func(*Config)) *Config {
+		c := valid
+		mutate(&c)
+		return &c
+	}
+
+	tests := []struct {
+		name    string
+		cfg     *Config
+		wantErr bool
+	}{
+		{
+			name: "off is valid outside production",
+			cfg:  &valid,
+		},
+		{
+			name:    "off is invalid in production",
+			cfg:     copyWith(func(c *Config) { c.Environment = EnvironmentProduction }),
+			wantErr: true,
+		},
+		{
+			name: "proxy is valid with trusted proxies",
+			cfg:  copyWith(func(c *Config) { c.TLSMode = TLSModeProxy }),
+		},
+		{
+			name: "proxy is valid in production with trusted proxies",
+			cfg: copyWith(func(c *Config) {
+				c.Environment = EnvironmentProduction
+				c.TLSMode = TLSModeProxy
+			}),
+		},
+		{
+			name: "proxy requires trusted proxies",
+			cfg: copyWith(func(c *Config) {
+				c.TLSMode = TLSModeProxy
+				c.TrustedProxies = nil
+			}),
+			wantErr: true,
+		},
+		{
+			name: "direct is valid with a certificate and key",
+			cfg:  copyWith(func(c *Config) { c.TLSMode = TLSModeDirect }),
+		},
+		{
+			name: "direct requires both certificate files",
+			cfg: copyWith(func(c *Config) {
+				c.TLSMode = TLSModeDirect
+				c.TLSKeyFile = ""
+			}),
+			wantErr: true,
+		},
+		{
+			name:    "rejects a negative HSTS max age",
+			cfg:     copyWith(func(c *Config) { c.TLSHSTSMaxAge = -time.Second }),
+			wantErr: true,
+		},
+		{
+			name:    "rejects an unsupported mode",
+			cfg:     copyWith(func(c *Config) { c.TLSMode = "hybrid" }),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.validateTLS()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateTLS() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTLSEnabled(t *testing.T) {
+	tests := []struct {
+		mode TLSMode
+		want bool
+	}{
+		{mode: TLSModeOff, want: false},
+		{mode: TLSModeProxy, want: true},
+		{mode: TLSModeDirect, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.mode), func(t *testing.T) {
+			cfg := Config{TLSMode: tt.mode}
+			if got := cfg.TLSEnabled(); got != tt.want {
+				t.Fatalf("TLSEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDatabaseUsesTLS(t *testing.T) {
+	tests := []struct {
+		mode string
+		want bool
+	}{
+		{mode: "disable", want: false},
+		{mode: "allow", want: false},
+		{mode: "prefer", want: false},
+		{mode: "require", want: true},
+		{mode: "verify-ca", want: true},
+		{mode: "verify-full", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			cfg := Config{DBSSLMode: tt.mode}
+			if got := cfg.DatabaseUsesTLS(); got != tt.want {
+				t.Fatalf("DatabaseUsesTLS() = %v, want %v", got, tt.want)
 			}
 		})
 	}
