@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -45,7 +46,15 @@ type Server struct {
 // New wraps the assembled HTTP handler in a server. It only owns the HTTP
 // lifecycle (timeouts, graceful shutdown) and stays unaware of routing,
 // authentication or authorization concerns.
-func New(cfg *config.Config, logger *logger.Logger, handler http.Handler) *Server {
+//
+// In direct TLS mode the certificate pair is loaded here so an unreadable or
+// mismatched file fails the boot before the process starts serving.
+func New(cfg *config.Config, logger *logger.Logger, handler http.Handler) (*Server, error) {
+	tlsConfig, err := newTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Server{
 		http: &http.Server{
 			Addr:         ":" + cfg.ServerPort,
@@ -53,10 +62,29 @@ func New(cfg *config.Config, logger *logger.Logger, handler http.Handler) *Serve
 			ReadTimeout:  cfg.ServerReadTimeOut,
 			WriteTimeout: cfg.ServerWriteTimeOut,
 			IdleTimeout:  cfg.ServerIdleTimeOut,
+			TLSConfig:    tlsConfig,
 		},
 		config: cfg,
 		logger: logger,
+	}, nil
+}
+
+// newTLSConfig loads the certificate only when this server terminates TLS.
+// In proxy mode the listener stays plaintext and the proxy owns the certificate.
+func newTLSConfig(cfg *config.Config) (*tls.Config, error) {
+	if cfg.TLSMode != config.TLSModeDirect {
+		return nil, nil
 	}
+
+	certificate, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("loading TLS certificate: %w", err)
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{certificate},
+	}, nil
 }
 
 func (s *Server) Start() error {
@@ -69,12 +97,20 @@ func (s *Server) Start() error {
 	errCh := make(chan error, 1)
 
 	go func() {
-		s.logger.Info("starting server", "addr", s.config.ServerPort)
+		s.logger.Info("starting server", "addr", s.config.ServerPort, "tls_mode", s.config.TLSMode)
 
-		if err := server.ListenAndServe(); err != nil &&
-			!errors.Is(err, http.ErrServerClosed) {
-			s.logger.Error("server failed", "error", err)
-			errCh <- err
+		var serveErr error
+		if s.config.TLSMode == config.TLSModeDirect {
+			// The certificate was already loaded into TLSConfig, so the empty
+			// file names tell ServeTLS to use it.
+			serveErr = server.ListenAndServeTLS("", "")
+		} else {
+			serveErr = server.ListenAndServe()
+		}
+
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			s.logger.Error("server failed", "error", serveErr)
+			errCh <- serveErr
 		}
 	}()
 

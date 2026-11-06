@@ -14,6 +14,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/handler"
 	"github.com/PedroTamburini/hexago/internal/adapter/primary/http/middleware"
@@ -49,6 +50,16 @@ func run() error {
 	}
 
 	log := logger.NewLogger(cfg)
+
+	// The database connection is left to the operator, but a TLS-protected API
+	// talking to a database over plaintext is worth flagging at boot.
+	if cfg.TLSEnabled() && !cfg.DatabaseUsesTLS() {
+		log.Warn(
+			"TLS is enabled for the API but the database connection may be plaintext",
+			"tls_mode", cfg.TLSMode,
+			"db_sslmode", cfg.DBSSLMode,
+		)
+	}
 
 	db, err := database.NewPostgresConnection(cfg, log)
 	if err != nil {
@@ -98,6 +109,13 @@ func run() error {
 		return err
 	}
 
+	// HSTS is a production-only policy: applying it to a development origin
+	// would pin localhost to HTTPS long after the process stopped serving TLS.
+	hstsMaxAge := time.Duration(0)
+	if cfg.IsProduction() {
+		hstsMaxAge = cfg.TLSHSTSMaxAge
+	}
+
 	routes.Register(engine, log.Logger, routes.Options{
 		DocsEnabled:  !cfg.IsProduction(),
 		MaxBodyBytes: cfg.ServerMaxBodyBytes,
@@ -109,9 +127,21 @@ func run() error {
 			AllowCredentials: cfg.CORSAllowCredentials,
 			MaxAge:           cfg.CORSMaxAge,
 		},
+		TLS: middleware.TLSConfig{
+			Required:              cfg.TLSEnabled(),
+			Direct:                cfg.TLSMode == config.TLSModeDirect,
+			TrustedProxies:        cfg.TrustedProxies,
+			HSTSMaxAge:            hstsMaxAge,
+			HSTSIncludeSubDomains: cfg.TLSHSTSIncludeSubDomains,
+		},
 	}, wire(cfg, db, redisClient, hasher, tokens))
 
-	return server.New(cfg, log, engine).Start()
+	srv, err := server.New(cfg, log, engine)
+	if err != nil {
+		return err
+	}
+
+	return srv.Start()
 }
 
 // newRedisClient connects to Redis only when rate limiting is enabled. Returning
