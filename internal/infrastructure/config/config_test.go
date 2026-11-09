@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -680,5 +682,38 @@ func TestValidateCORSNormalizesMethods(t *testing.T) {
 	}
 	if got, want := cfg.CORSAllowedMethods[1], "PATCH"; got != want {
 		t.Fatalf("method[1] = %q, want %q", got, want)
+	}
+}
+
+func TestLoadConfigRejectsMalformedDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("UNTERMINATED=\"value\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	t.Chdir(dir)
+
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "loading .env") {
+		t.Fatalf("LoadConfig() error = %v, want a .env loading error", err)
+	}
+}
+
+func TestValidateHasherWarnsBelowRecommendedCost(t *testing.T) {
+	cfg := &Config{HasherCost: 4}
+
+	// A low but still valid bcrypt cost is accepted; it only triggers a warning
+	// because it weakens every stored hash.
+	if err := cfg.validateHasher(); err != nil {
+		t.Fatalf("validateHasher() error = %v, want nil", err)
+	}
+}
+
+func TestValidateCORSRejectsUnparseableOrigin(t *testing.T) {
+	cfg := Config{
+		Environment:        EnvironmentDevelopment,
+		CORSAllowedOrigins: []string{"https://exa%mple.com"},
+	}
+
+	if err := cfg.validateCORS(); err == nil {
+		t.Fatal("validateCORS() accepted an origin with an invalid URL escape")
 	}
 }

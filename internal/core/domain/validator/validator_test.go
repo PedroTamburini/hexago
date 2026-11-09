@@ -66,3 +66,111 @@ func TestIsValidPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidName(t *testing.T) {
+	testCases := []struct {
+		name      string
+		input     string
+		wantValid bool
+	}{
+		{name: "simple name", input: "John", wantValid: true},
+		{name: "full name with space", input: "John Doe", wantValid: true},
+		{name: "accented letters", input: "João D'Ávila", wantValid: true},
+		{name: "hyphenated name", input: "Anne-Marie", wantValid: true},
+		{name: "empty name is rejected", input: "", wantValid: false},
+		{name: "digits are rejected", input: "John2", wantValid: false},
+		{name: "leading space is rejected", input: " John", wantValid: false},
+		{name: "trailing space is rejected", input: "John ", wantValid: false},
+		{name: "double space is rejected", input: "John  Doe", wantValid: false},
+		{name: "symbols are rejected", input: "John@Doe", wantValid: false},
+		{
+			name:      "exactly 100 bytes is accepted",
+			input:     strings.Repeat("a", 100),
+			wantValid: true,
+		},
+		{
+			name:      "101 bytes is rejected",
+			input:     strings.Repeat("a", 101),
+			wantValid: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsValidName(tc.input); got != tc.wantValid {
+				t.Fatalf("IsValidName(%q) = %v, want %v", tc.input, got, tc.wantValid)
+			}
+		})
+	}
+}
+
+func TestIsValidUsername(t *testing.T) {
+	testCases := []struct {
+		name      string
+		input     string
+		wantValid bool
+	}{
+		{name: "first.last", input: "john.doe", wantValid: true},
+		{name: "single letters", input: "a.b", wantValid: true},
+		{name: "uppercase is rejected", input: "John.Doe", wantValid: false},
+		{name: "digits are rejected", input: "john.doe2", wantValid: false},
+		{name: "missing dot is rejected", input: "johndoe", wantValid: false},
+		{name: "multiple dots are rejected", input: "john.doe.silva", wantValid: false},
+		{name: "leading dot is rejected", input: ".john", wantValid: false},
+		{name: "empty is rejected", input: "", wantValid: false},
+		{
+			name:      "exactly 60 bytes is accepted",
+			input:     strings.Repeat("a", 29) + "." + strings.Repeat("b", 30),
+			wantValid: true,
+		},
+		{
+			name:      "61 bytes is rejected",
+			input:     strings.Repeat("a", 30) + "." + strings.Repeat("b", 30),
+			wantValid: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsValidUsername(tc.input); got != tc.wantValid {
+				t.Fatalf("IsValidUsername(%q) = %v, want %v", tc.input, got, tc.wantValid)
+			}
+		})
+	}
+}
+
+func TestIsValidEmail(t *testing.T) {
+	testCases := []struct {
+		name      string
+		input     string
+		wantValid bool
+	}{
+		{name: "simple email", input: "john@example.com", wantValid: true},
+		{name: "subdomain", input: "john@mail.example.com", wantValid: true},
+		{name: "plus tag", input: "john+tag@example.com", wantValid: true},
+		{name: "dotted local part", input: "john.doe@example.com", wantValid: true},
+		{name: "missing at sign", input: "john.example.com", wantValid: false},
+		{name: "missing tld", input: "john@example", wantValid: false},
+		{name: "short tld", input: "john@example.c", wantValid: false},
+		{name: "consecutive dots", input: "john..doe@example.com", wantValid: false},
+		{name: "empty is rejected", input: "", wantValid: false},
+		{
+			name:      "254 bytes is accepted",
+			input:     "a@" + strings.Repeat("b", 248) + ".com",
+			wantValid: true,
+		},
+		{
+			name:      "255 bytes is rejected",
+			input:     "a@" + strings.Repeat("b", 249) + ".com",
+			wantValid: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsValidEmail(tc.input); got != tc.wantValid {
+				t.Fatalf("IsValidEmail(%q) = %v, want %v", tc.input, got, tc.wantValid)
+			}
+		})
+	}
+}

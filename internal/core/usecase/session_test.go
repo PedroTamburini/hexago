@@ -91,3 +91,104 @@ func TestListUserSessionsMapsFields(t *testing.T) {
 		t.Fatalf("unexpected session: %+v", sessions[0])
 	}
 }
+
+func TestListUserSessionsReturnsEmptySlice(t *testing.T) {
+	uc := NewSessionManagementUseCase(&stubSessionRegistry{}, &stubDenylist{}, &stubTokenVersionManager{})
+
+	sessions, err := uc.ListUserSessions(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("ListUserSessions: %v", err)
+	}
+
+	if sessions == nil || len(sessions) != 0 {
+		t.Fatalf("expected an empty non-nil slice, got %#v", sessions)
+	}
+}
+
+func TestListUserSessionsPropagatesRegistryError(t *testing.T) {
+	listErr := errors.New("redis unavailable")
+	registry := &stubSessionRegistry{listErr: listErr}
+
+	uc := NewSessionManagementUseCase(registry, &stubDenylist{}, &stubTokenVersionManager{})
+
+	if _, err := uc.ListUserSessions(context.Background(), 7); !errors.Is(err, listErr) {
+		t.Fatalf("error = %v, want %v", err, listErr)
+	}
+}
+
+func TestRevokeSessionPropagatesErrors(t *testing.T) {
+	getErr := errors.New("redis unavailable")
+	denyErr := errors.New("denylist unavailable")
+	removeErr := errors.New("registry unavailable")
+
+	session := portout.Session{
+		JTI:       "jti-1",
+		UserID:    7,
+		ExpiresAt: time.Now().Add(15 * time.Minute),
+	}
+
+	t.Run("lookup fails", func(t *testing.T) {
+		uc := NewSessionManagementUseCase(&stubSessionRegistry{getErr: getErr}, &stubDenylist{}, &stubTokenVersionManager{})
+
+		if err := uc.RevokeSession(context.Background(), "jti-1"); !errors.Is(err, getErr) {
+			t.Fatalf("error = %v, want %v", err, getErr)
+		}
+	})
+
+	t.Run("denylist fails", func(t *testing.T) {
+		registry := &stubSessionRegistry{sessions: map[string]portout.Session{session.JTI: session}}
+		denylist := &stubDenylist{err: denyErr}
+
+		uc := NewSessionManagementUseCase(registry, denylist, &stubTokenVersionManager{})
+
+		if err := uc.RevokeSession(context.Background(), session.JTI); !errors.Is(err, denyErr) {
+			t.Fatalf("error = %v, want %v", err, denyErr)
+		}
+
+		if registry.removeCalls != 0 {
+			t.Fatalf("expected the session not to be removed, got %d calls", registry.removeCalls)
+		}
+	})
+
+	t.Run("removal fails", func(t *testing.T) {
+		registry := &stubSessionRegistry{
+			sessions:  map[string]portout.Session{session.JTI: session},
+			removeErr: removeErr,
+		}
+
+		uc := NewSessionManagementUseCase(registry, &stubDenylist{}, &stubTokenVersionManager{})
+
+		if err := uc.RevokeSession(context.Background(), session.JTI); !errors.Is(err, removeErr) {
+			t.Fatalf("error = %v, want %v", err, removeErr)
+		}
+	})
+}
+
+func TestRevokeAllUserSessionsPropagatesErrors(t *testing.T) {
+	incrementErr := errors.New("version failed")
+	removeErr := errors.New("registry failed")
+
+	t.Run("increment fails", func(t *testing.T) {
+		registry := &stubSessionRegistry{}
+
+		uc := NewSessionManagementUseCase(registry, &stubDenylist{}, &stubTokenVersionManager{incrementErr: incrementErr})
+
+		if err := uc.RevokeAllUserSessions(context.Background(), 7); !errors.Is(err, incrementErr) {
+			t.Fatalf("error = %v, want %v", err, incrementErr)
+		}
+
+		if len(registry.removedAll) != 0 {
+			t.Fatalf("expected no removals, got %v", registry.removedAll)
+		}
+	})
+
+	t.Run("removal fails", func(t *testing.T) {
+		registry := &stubSessionRegistry{removeAllErr: removeErr}
+
+		uc := NewSessionManagementUseCase(registry, &stubDenylist{}, &stubTokenVersionManager{})
+
+		if err := uc.RevokeAllUserSessions(context.Background(), 7); !errors.Is(err, removeErr) {
+			t.Fatalf("error = %v, want %v", err, removeErr)
+		}
+	})
+}

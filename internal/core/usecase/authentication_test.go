@@ -403,3 +403,182 @@ func TestRevokeAllUserTokensBumpsVersionAndClearsSessions(t *testing.T) {
 		t.Fatalf("removedAll = %v, want [42]", sessions.removedAll)
 	}
 }
+
+func TestAuthenticationUseCasePropagatesTokenVersionError(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "correct-password"
+	)
+
+	versionErr := errors.New("redis unavailable")
+	finder := &stubCredentialsRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: validHash},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{}
+	versions := &stubTokenVersionManager{getErr: versionErr}
+
+	uc := NewAuthenticationUseCase(finder, hasher, jwt, &stubDenylist{}, &stubSessionRegistry{}, versions)
+
+	_, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{Username: "john.doe", Password: plain})
+	if !errors.Is(err, versionErr) {
+		t.Fatalf("error = %v, want %v", err, versionErr)
+	}
+
+	if jwt.generations != 0 {
+		t.Fatalf("expected no token to be generated, got %d", jwt.generations)
+	}
+}
+
+func TestAuthenticationUseCasePropagatesTokenGenerationError(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "correct-password"
+	)
+
+	generationErr := errors.New("signing failed")
+	finder := &stubCredentialsRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: validHash},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{generateErr: generationErr}
+
+	uc := newAuthUseCase(finder, hasher, jwt)
+
+	_, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{Username: "john.doe", Password: plain})
+	if !errors.Is(err, generationErr) {
+		t.Fatalf("error = %v, want %v", err, generationErr)
+	}
+}
+
+func TestAuthenticationUseCaseIgnoresSessionRegistrationFailure(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "correct-password"
+	)
+
+	finder := &stubCredentialsRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: validHash},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{tokenClaims: &portout.TokenClaims{JTI: "jti-1", Subject: "42"}}
+	sessions := &stubSessionRegistry{registerErr: errors.New("registry unavailable")}
+
+	uc := NewAuthenticationUseCase(finder, hasher, jwt, &stubDenylist{}, sessions, &stubTokenVersionManager{})
+
+	output, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{Username: "john.doe", Password: plain})
+	if err != nil {
+		t.Fatalf("Authenticate should not fail when the session cannot be recorded: %v", err)
+	}
+
+	if output.Token != "generated-token" {
+		t.Fatalf("token = %q, want generated-token", output.Token)
+	}
+
+	if sessions.registerCall != 1 {
+		t.Fatalf("register calls = %d, want 1", sessions.registerCall)
+	}
+}
+
+func TestAuthenticationUseCaseIgnoresUnparseableGeneratedToken(t *testing.T) {
+	const (
+		validHash = "$2a$12$validhash"
+		plain     = "correct-password"
+	)
+
+	finder := &stubCredentialsRepository{
+		credentials: &portout.Credentials{ID: 42, PasswordHash: validHash},
+	}
+	hasher := &stubPasswordHasher{hash: validHash, expectedPlain: plain}
+	jwt := &stubJWTService{parseErr: errors.New("cannot parse")}
+	sessions := &stubSessionRegistry{}
+
+	uc := NewAuthenticationUseCase(finder, hasher, jwt, &stubDenylist{}, sessions, &stubTokenVersionManager{})
+
+	if _, err := uc.Authenticate(context.Background(), dto.AuthenticateInput{Username: "john.doe", Password: plain}); err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+
+	if sessions.registerCall != 0 {
+		t.Fatalf("expected no session to be registered, got %d calls", sessions.registerCall)
+	}
+}
+
+func TestRevokeTokenPropagatesDenylistError(t *testing.T) {
+	denyErr := errors.New("redis unavailable")
+	jwt := &stubJWTService{tokenClaims: &portout.TokenClaims{JTI: "jti-1", ExpiresAt: time.Now().Add(time.Minute)}}
+	denylist := &stubDenylist{err: denyErr}
+	sessions := &stubSessionRegistry{}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsRepository{}, &stubPasswordHasher{}, jwt, denylist, sessions, &stubTokenVersionManager{})
+
+	err := uc.RevokeToken(context.Background(), "token")
+	if !errors.Is(err, denyErr) {
+		t.Fatalf("error = %v, want %v", err, denyErr)
+	}
+
+	if sessions.removeCalls != 0 {
+		t.Fatalf("expected the session not to be removed, got %d calls", sessions.removeCalls)
+	}
+}
+
+func TestRevokeTokenPropagatesSessionRemovalError(t *testing.T) {
+	removeErr := errors.New("registry unavailable")
+	jwt := &stubJWTService{tokenClaims: &portout.TokenClaims{JTI: "jti-1", ExpiresAt: time.Now().Add(time.Minute)}}
+	sessions := &stubSessionRegistry{removeErr: removeErr}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsRepository{}, &stubPasswordHasher{}, jwt, &stubDenylist{}, sessions, &stubTokenVersionManager{})
+
+	err := uc.RevokeToken(context.Background(), "token")
+	if !errors.Is(err, removeErr) {
+		t.Fatalf("error = %v, want %v", err, removeErr)
+	}
+}
+
+func TestRevokeAllUserTokensPropagatesErrors(t *testing.T) {
+	incrementErr := errors.New("version failed")
+	removeErr := errors.New("registry failed")
+
+	t.Run("increment fails", func(t *testing.T) {
+		versions := &stubTokenVersionManager{incrementErr: incrementErr}
+		sessions := &stubSessionRegistry{}
+
+		uc := NewAuthenticationUseCase(&stubCredentialsRepository{}, &stubPasswordHasher{}, &stubJWTService{}, &stubDenylist{}, sessions, versions)
+
+		if err := uc.RevokeAllUserTokens(context.Background(), 42); !errors.Is(err, incrementErr) {
+			t.Fatalf("error = %v, want %v", err, incrementErr)
+		}
+
+		if len(sessions.removedAll) != 0 {
+			t.Fatalf("expected sessions not to be removed, got %v", sessions.removedAll)
+		}
+	})
+
+	t.Run("session removal fails", func(t *testing.T) {
+		versions := &stubTokenVersionManager{}
+		sessions := &stubSessionRegistry{removeAllErr: removeErr}
+
+		uc := NewAuthenticationUseCase(&stubCredentialsRepository{}, &stubPasswordHasher{}, &stubJWTService{}, &stubDenylist{}, sessions, versions)
+
+		if err := uc.RevokeAllUserTokens(context.Background(), 42); !errors.Is(err, removeErr) {
+			t.Fatalf("error = %v, want %v", err, removeErr)
+		}
+	})
+}
+
+func TestNewAuthenticationUseCaseFallsBackToStaticDummyHash(t *testing.T) {
+	// If the dummy hash cannot be generated the constructor must still return a
+	// usable use case, falling back to the embedded hash.
+	hasher := &stubPasswordHasher{hashErr: errors.New("hashing failed")}
+
+	uc := NewAuthenticationUseCase(&stubCredentialsRepository{}, hasher, &stubJWTService{}, &stubDenylist{}, &stubSessionRegistry{}, &stubTokenVersionManager{})
+
+	authentication, ok := uc.(*authenticationUseCase)
+	if !ok {
+		t.Fatalf("unexpected use case type %T", uc)
+	}
+
+	if authentication.dummyHash != dummyPasswordHash {
+		t.Fatalf("dummyHash = %q, want the static fallback", authentication.dummyHash)
+	}
+}

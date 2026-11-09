@@ -38,3 +38,24 @@ func TestPasswordHasherUsesTheConfiguredCost(t *testing.T) {
 		t.Errorf("hash %q was not produced with cost 11", hash)
 	}
 }
+
+func TestPasswordHasherDefaultsToBcryptDefaultCost(t *testing.T) {
+	hasher := NewPasswordHasher(0)
+
+	hash, err := hasher.Hash("correct-horse-battery")
+	if err != nil {
+		t.Fatalf("Hash() error = %v, want nil", err)
+	}
+
+	if !strings.HasPrefix(hash, "$2a$10$") {
+		t.Errorf("hash %q was not produced with the default cost", hash)
+	}
+}
+
+func TestPasswordHasherRejectsInvalidCost(t *testing.T) {
+	hasher := NewPasswordHasher(bcrypt.MaxCost + 1)
+
+	if _, err := hasher.Hash("correct-horse-battery"); err == nil {
+		t.Fatal("Hash() accepted an out of range cost")
+	}
+}

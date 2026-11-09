@@ -73,6 +73,7 @@ func (s *stubCredentialsRepository) SetTempPassword(_ context.Context, id uint64
 
 type stubPasswordHasher struct {
 	hash          string
+	hashErr       error
 	expectedPlain string
 	hashes        int
 	compares      int
@@ -82,7 +83,7 @@ type stubPasswordHasher struct {
 func (s *stubPasswordHasher) Hash(string) (string, error) {
 	s.hashes++
 
-	return s.hash, nil
+	return s.hash, s.hashErr
 }
 
 func (s *stubPasswordHasher) Compare(hashed, plain string) error {
@@ -103,6 +104,7 @@ type stubJWTService struct {
 	generations      int
 	tokenClaims      *portout.TokenClaims
 	parseErr         error
+	generateErr      error
 }
 
 func (s *stubJWTService) GenerateToken(userID uint64, tokenVersion int) (string, error) {
@@ -114,6 +116,10 @@ func (s *stubJWTService) GenerateTokenWithPurpose(userID uint64, tokenVersion in
 	s.generatedVer = tokenVersion
 	s.generatedPurpose = purpose
 	s.generations++
+
+	if s.generateErr != nil {
+		return "", s.generateErr
+	}
 
 	return "generated-token", nil
 }
@@ -167,6 +173,11 @@ type stubSessionRegistry struct {
 	removeCalls  int
 	removedAll   []uint64
 	err          error
+	registerErr  error
+	getErr       error
+	listErr      error
+	removeErr    error
+	removeAllErr error
 	registerCall int
 }
 
@@ -177,10 +188,17 @@ func (s *stubSessionRegistry) Register(_ context.Context, session portout.Sessio
 	}
 	s.sessions[session.JTI] = session
 
+	if s.registerErr != nil {
+		return s.registerErr
+	}
+
 	return s.err
 }
 
 func (s *stubSessionRegistry) GetByJTI(_ context.Context, jti string) (*portout.Session, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -193,6 +211,9 @@ func (s *stubSessionRegistry) GetByJTI(_ context.Context, jti string) (*portout.
 }
 
 func (s *stubSessionRegistry) ListByUserID(_ context.Context, userID uint64) ([]*portout.Session, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -212,28 +233,46 @@ func (s *stubSessionRegistry) Remove(_ context.Context, jti string) error {
 	s.removeCalls++
 	delete(s.sessions, jti)
 
+	if s.removeErr != nil {
+		return s.removeErr
+	}
+
 	return s.err
 }
 
 func (s *stubSessionRegistry) RemoveAllByUserID(_ context.Context, userID uint64) error {
 	s.removedAll = append(s.removedAll, userID)
 
+	if s.removeAllErr != nil {
+		return s.removeAllErr
+	}
+
 	return s.err
 }
 
 type stubTokenVersionManager struct {
-	version  int
-	increase int
-	err      error
+	version      int
+	increase     int
+	err          error
+	getErr       error
+	incrementErr error
 }
 
 func (s *stubTokenVersionManager) GetVersion(context.Context, uint64) (int, error) {
+	if s.getErr != nil {
+		return 0, s.getErr
+	}
+
 	return s.version, s.err
 }
 
 func (s *stubTokenVersionManager) IncrementVersion(context.Context, uint64) (int, error) {
 	s.increase++
 	s.version++
+
+	if s.incrementErr != nil {
+		return 0, s.incrementErr
+	}
 
 	return s.version, s.err
 }
@@ -246,8 +285,19 @@ type stubUserRepository struct {
 	findByID    *entity.User
 	findByIDErr error
 
+	createCalls int
+	createErr   error
+	createdUser *entity.User
+
+	updateCalls int
+	updateErr   error
+	updatedUser *entity.User
+
+	findAllErr error
+
 	deletedID   uint64
 	deleteCalls int
+	deleteErr   error
 
 	statusID     uint64
 	statusActive bool
@@ -255,7 +305,12 @@ type stubUserRepository struct {
 	statusErr    error
 }
 
-func (s *stubUserRepository) Create(context.Context, *entity.User) error { return nil }
+func (s *stubUserRepository) Create(_ context.Context, user *entity.User) error {
+	s.createCalls++
+	s.createdUser = user
+
+	return s.createErr
+}
 
 func (s *stubUserRepository) FindByID(context.Context, uint64) (*entity.User, error) {
 	return s.findByID, s.findByIDErr
@@ -265,16 +320,25 @@ func (s *stubUserRepository) FindAll(_ context.Context, limit, offset int) ([]*e
 	s.limit = limit
 	s.offset = offset
 
+	if s.findAllErr != nil {
+		return nil, s.findAllErr
+	}
+
 	return s.users, nil
 }
 
-func (s *stubUserRepository) Update(context.Context, *entity.User) error { return nil }
+func (s *stubUserRepository) Update(_ context.Context, user *entity.User) error {
+	s.updateCalls++
+	s.updatedUser = user
+
+	return s.updateErr
+}
 
 func (s *stubUserRepository) Delete(_ context.Context, id uint64) error {
 	s.deleteCalls++
 	s.deletedID = id
 
-	return nil
+	return s.deleteErr
 }
 
 func (s *stubUserRepository) SetStatus(_ context.Context, id uint64, isActive bool) error {

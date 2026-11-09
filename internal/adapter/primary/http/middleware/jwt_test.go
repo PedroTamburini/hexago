@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -290,4 +291,132 @@ func (c recordingPermissionChecker) HasPermission(_ context.Context, userID uint
 	*c.userID = userID
 	*c.permission = permission
 	return true, nil
+}
+
+func TestJWTAuthMiddlewareRejectsMalformedAuthorizationHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	headers := []string{
+		"Basic abc",
+		"Bearer",
+		"Bearer a b",
+		"bearer",
+	}
+
+	for _, header := range headers {
+		t.Run(header, func(t *testing.T) {
+			engine := gin.New()
+			engine.GET("/x", JWTAuthMiddleware(
+				stubTokenParser{claims: testClaims()},
+				stubTokenDenylist{},
+				stubTokenVersions{},
+			), func(c *gin.Context) {
+				c.Status(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			req.Header.Set("Authorization", header)
+			rec := httptest.NewRecorder()
+
+			engine.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("header %q: status = %d, want %d", header, rec.Code, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsUnparseableToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddleware(
+		stubTokenParser{err: errors.New("bad signature")},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+	), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "broken-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareRejectsNonNumericSubject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	claims := testClaims()
+	claims.Subject = "not-a-number"
+
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddleware(
+		stubTokenParser{claims: claims},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+	), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTAuthMiddlewareFailsClosedWhenVersionStoreIsUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddleware(
+		stubTokenParser{claims: testClaims()},
+		stubTokenDenylist{},
+		stubTokenVersions{err: errors.New("redis unavailable")},
+	), func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "token")
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestJWTAuthMiddlewareTreatsLegacyTokenWithoutPurposeAsAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	claims := testClaims()
+	claims.Purpose = ""
+
+	called := false
+	engine := gin.New()
+	engine.GET("/x", JWTAuthMiddleware(
+		stubTokenParser{claims: claims},
+		stubTokenDenylist{},
+		stubTokenVersions{},
+	), func(c *gin.Context) {
+		called = true
+
+		purpose, ok := GetTokenPurpose(c)
+		if !ok || purpose != portout.TokenPurposeAccess {
+			t.Fatalf("purpose = %q, ok = %v; want %q", purpose, ok, portout.TokenPurposeAccess)
+		}
+
+		c.Status(http.StatusOK)
+	})
+
+	rec := serve(engine, "legacy-token")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	if !called {
+		t.Fatal("expected the handler to be called")
+	}
 }
